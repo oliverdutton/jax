@@ -355,7 +355,7 @@ def _load_discharge_rule(in_avals, out_avals, *args_flat, args_tree, **_):
     out_indexer = tuple(0 if scalar else slice(None) for scalar in scalar_dims)
     out = out_ones[out_indexer]
   elif all(not isinstance(s, Slice) for s in idx.indices):
-    out = ref[idx.indices]
+    out = ref.at[idx.indices].get(mode='fill')
   else:
     raise NotImplementedError
   if mask is not None and other is not None:
@@ -474,7 +474,7 @@ def _swap_discharge_rule(in_avals, out_avals, *args_flat, args_tree, **_):
     x_new = lax.dynamic_update_slice(ref, val, start_indices=slice_starts)
     x_new = _unpad_values_to_avoid_dynamic_slice_oob_shift(x_new, slice_sizes)
   elif all(not isinstance(s, Slice) for s in idx.indices):
-    out = ref[idx.indices]
+    out = ref.at[idx.indices].get(mode='fill')
     if mask is not None:
       out_ = out
       out = jnp.where(mask, out, val)
