@@ -1510,7 +1510,7 @@ def _pallas_call_lowering(
           raise ValueError(f"Unsupported backend: {backend}")
     except ImportError as e:
       raise _unsupported_lowering_error("gpu")
-
+    print(ctx, in_nodes, params)
     return pallas_call_registration.pallas_call_lowering(
         ctx, *in_nodes, **params
     )
