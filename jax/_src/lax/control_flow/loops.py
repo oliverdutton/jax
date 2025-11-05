@@ -2954,8 +2954,8 @@ def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0, 
     return list(_map(partial(_interleave, axis=axis), even_elems, odd_elems))
     
   def _naive_scan(elems):
-    _slice_to = lambda elems, i: [slicing.slice_in_dim(elem, limit_index=i, axis=axis) for elem in elems]
-    _slice_from = lambda elems, i: [slicing.slice_in_dim(elem, start_index=i, axis=axis) for elem in elems]
+    _slice_to = lambda elems, i: [slicing.slice_in_dim(elem, 0, i, axis=axis) for elem in elems]
+    _slice_from = lambda elems, i: [slicing.slice_in_dim(elem, i, None, axis=axis) for elem in elems]
     _length = lambda elems: elems[0].shape[axis]
     _concat = lambda *elems: jax.tree.map(lambda *xs: lax.concatenate(xs, dimension=axis), *elems)
 
