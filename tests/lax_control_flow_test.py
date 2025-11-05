@@ -2603,26 +2603,33 @@ class LaxControlFlowTest(jtu.JaxTestCase):
     self.assertEqual(result_jit, result_nojit)
 
   @parameterized.named_parameters(
-      {"testcase_name": f"_{shape}_{axis=}",
-       "shape": shape, "axis": axis}
+      {"testcase_name": f"_{shape}_{axis=}_{work_efficient=}",
+       "shape": shape, "axis": axis, "work_efficient": work_efficient}
       for shape in [
         [0], [1], [2], [3], [5], [10], [1000],
         [2, 3], [7, 5], [5, 6, 7]
       ]
-      for axis in range(-len(shape), len(shape) - 1))
-  def testAssociativeScanUnstructured(self, shape, axis):
+      for axis in range(-len(shape), len(shape) - 1)
+      for work_efficient in (True, False))
+  def testAssociativeScanUnstructured(self, shape, axis, work_efficient):
     data = np.arange(np.prod(shape)).reshape(shape) + 7
     expected = np.cumsum(data, axis=axis)
-    result = lax.associative_scan(operator.add, data, axis=axis)
+    result = lax.associative_scan(operator.add, data, axis=axis, work_efficient=work_efficient)
     self.assertAllClose(result, expected, check_dtypes=False)
 
-  def testAssociativeScanUnstructured1000Reverse(self):
+  @parameterized.named_parameters(
+      {"testcase_name": f"_{work_efficient=}", "work_efficient": work_efficient}
+      for work_efficient in (True, False))
+  def testAssociativeScanUnstructured1000Reverse(self, work_efficient):
     data = np.arange(1000) + 32
     expected = np.cumsum(data[::-1])[::-1]
-    result = lax.associative_scan(operator.add, data, reverse=True)
+    result = lax.associative_scan(operator.add, data, reverse=True, work_efficient=work_efficient)
     self.assertAllClose(result, expected, check_dtypes=False)
 
-  def testAssociativeScanStructured3(self):
+  @parameterized.named_parameters(
+      {"testcase_name": f"_{work_efficient=}", "work_efficient": work_efficient}
+      for work_efficient in (True, False))
+  def testAssociativeScanStructured3(self, work_efficient):
     pair = collections.namedtuple('pair', ('first', 'second'))
     data = pair(first=np.array([0., 1., 2.]),
                 second=np.array([0., 10., 20.]))
@@ -2631,20 +2638,26 @@ class LaxControlFlowTest(jtu.JaxTestCase):
       return pair(first=a.first + b.first,
                   second=a.second + b.second)
 
-    result = lax.associative_scan(fn, elems=data)
+    result = lax.associative_scan(fn, elems=data, work_efficient=work_efficient)
     self.assertAllClose(result.first, np.array([0., 1., 3.]),
                         check_dtypes=False)
     self.assertAllClose(result.second, np.array([0., 10., 30.]),
                         check_dtypes=False)
 
-  def testAssociativeScanOfBools(self):
+  @parameterized.named_parameters(
+      {"testcase_name": f"_{work_efficient=}", "work_efficient": work_efficient}
+      for work_efficient in (True, False))
+  def testAssociativeScanOfBools(self, work_efficient):
     x = jnp.array([False, True, True, True, False, True])
-    y = lax.associative_scan(lax.bitwise_xor, x)
+    y = lax.associative_scan(lax.bitwise_xor, x, work_efficient=work_efficient)
     self.assertArraysEqual(np.array([False, True, False, True, True, False]), y)
 
-  @parameterized.named_parameters({"testcase_name": f"_{shape}", "shape": shape}
-                                  for shape in [2, 43, 100])
-  def testAssociativeScanSolvingRegressionTest(self, shape):
+  @parameterized.named_parameters(
+      {"testcase_name": f"_{shape}_{work_efficient=}",
+       "shape": shape, "work_efficient": work_efficient}
+      for shape in [2, 43, 100]
+      for work_efficient in (True, False))
+  def testAssociativeScanSolvingRegressionTest(self, shape, work_efficient):
     # This test checks that the batching rule doesn't raise for a batch
     # sensitive function (solve).
     ms = np.repeat(np.eye(2).reshape(1, 2, 2), shape, axis=0)
@@ -2656,7 +2669,7 @@ class LaxControlFlowTest(jtu.JaxTestCase):
       m2, v2 = b
       return m1 + m2, jsp.linalg.solve(m1, v2) + jsp.linalg.solve(m2, v1)
 
-    _ = lax.associative_scan(fn, elems=(ms, vs))
+    _ = lax.associative_scan(fn, elems=(ms, vs), work_efficient=work_efficient)
 
   def test_scan_typecheck_param(self):
     d = jnp.ones(2)
