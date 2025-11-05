@@ -2816,8 +2816,9 @@ batching.primitive_batchers[lax.rng_bit_generator_p] = _rng_bit_generator_batchi
 
 ### associative_scan
 
+
 @api_boundary
-def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0):
+def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0, work_efficient: bool = True):
   """Performs a scan with an associative binary operation, in parallel.
 
   For an introduction to associative scans, see [BLE1990]_.
@@ -2841,6 +2842,7 @@ def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0):
     reverse: A boolean stating if the scan should be reversed with respect to
       the ``axis`` dimension.
     axis: an integer identifying the axis over which the scan should occur.
+    work_efficient: whether to use a work efficient or naive implementation, the naive implementation can be faster for small problem sizes.
 
   Returns:
     A (possibly nested Python tree structure of) array(s) of the same shape
@@ -2950,8 +2952,38 @@ def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0):
                       dimension=axis)
       for (elem, result) in zip(elems, even_elems)]
     return list(_map(partial(_interleave, axis=axis), even_elems, odd_elems))
+    
+  def _naive_scan(elems):
+    _slice_to = lambda elems, i: [slicing.slice_in_dim(elem, limit_index=i, axis=axis) for elem in elems]
+    _slice_from = lambda elems, i: [slicing.slice_in_dim(elem, start_index=i, axis=axis) for elem in elems]
+    _length = lambda elems: elems[0].shape[axis]
+    _concat = lambda *elems: jax.tree.map(lambda *xs: lax.concatenate(xs, dimension=axis), *elems)
 
-  scans = _scan(elems_flat)
+    if _length(elems) < 2:
+      return elems
+
+    w = 1
+    l = _slice_to(elems,  _length(elems) - w)
+    r = _slice_from(elems, w)
+    while (2 * w) < _length(elems):
+      # Hillis, W. D. and Steele, G. L. (1986). Data parallel algorithms. Communications of the ACM, 29(12), 1170–1183
+      # log_2{n} steps        
+      # at the end of each loop l[:2*w] is fully computed
+      updated_r = combine(l, r)      
+      r = _slice_from(updated_r, w)  
+      l = _concat(
+        _slice_to(l, w),
+        _slice_to(updated_r, max(_length(r)-w, w)))
+      w *= 2
+    updated_r = combine(
+      _slice_to(l, _length(r)),
+      r)
+    return _concat(l, updated_r)
+    
+  if work_efficient:
+    scans = _scan(elems_flat)
+  else:
+    scans = _naive_scan(elems_flat)
 
   if reverse:
     scans = [lax.rev(scanned, [axis]) for scanned in scans]
