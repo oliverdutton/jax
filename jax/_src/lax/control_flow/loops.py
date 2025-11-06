@@ -2952,7 +2952,7 @@ def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0, 
                       dimension=axis)
       for (elem, result) in zip(elems, even_elems)]
     return list(_map(partial(_interleave, axis=axis), even_elems, odd_elems))
-    
+
   def _naive_scan(elems):
     _slice_to = lambda elems, i: [slicing.slice_in_dim(elem, 0, i, axis=axis) for elem in elems]
     _slice_from = lambda elems, i: [slicing.slice_in_dim(elem, i, None, axis=axis) for elem in elems]
@@ -2967,10 +2967,10 @@ def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0, 
     r = _slice_from(elems, w)
     while (2 * w) < _length(elems):
       # Hillis, W. D. and Steele, G. L. (1986). Data parallel algorithms. Communications of the ACM, 29(12), 1170–1183
-      # log_2{n} steps        
+      # log_2{n} steps
       # at the end of each loop l[:2*w] is fully computed
-      updated_r = combine(l, r)      
-      r = _slice_from(updated_r, w)  
+      updated_r = combine(l, r)
+      r = _slice_from(updated_r, w)
       l = _concat(
         _slice_to(l, w),
         _slice_to(updated_r, max(_length(r)-w, w)))
@@ -2979,7 +2979,7 @@ def associative_scan(fn: Callable, elems, reverse: bool = False, axis: int = 0, 
       _slice_to(l, _length(r)),
       r)
     return _concat(l, updated_r)
-    
+
   if work_efficient:
     scans = _scan(elems_flat)
   else:
