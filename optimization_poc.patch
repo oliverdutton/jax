@@ -1,0 +1,154 @@
+diff --git a/jax/_src/pallas/mosaic/interpret/interpret_pallas_call.py b/jax/_src/pallas/mosaic/interpret/interpret_pallas_call.py
+index original..modified 100644
+--- a/jax/_src/pallas/mosaic/interpret/interpret_pallas_call.py
++++ b/jax/_src/pallas/mosaic/interpret/interpret_pallas_call.py
+@@ -59,6 +59,12 @@ zip, unsafe_zip = safe_zip, zip
+
+ @dataclasses.dataclass(frozen=True, kw_only=True)
+ class InterpretParams:
+   """Parameters for TPU interpret mode.
+
+   TPU interpret mode is a way run Pallas TPU kernels on CPU, while simulating
+@@ -138,6 +144,16 @@ class InterpretParams:
+   # recorded grid points, make sure to set random_seed to None.
+   grid_point_recorder: Callable[[tuple[jnp.int32, ...], jnp.int32], None] | None = None
+
++  # NEW: Performance optimization flags
++  use_pure_callback_for_loads: bool = False
++  """If True, use pure_callback instead of io_callback for loads (faster)."""
++
++  precompute_grid_indices: bool = False
++  """If True, pre-compute all grid indices (faster for static grids)."""
++
++  batch_memory_operations: bool = False
++  """If True, batch multiple memory operations into single callbacks (experimental)."""
++
+
+ def _is_any(memory_space):
+   return memory_space == mosaic_core.MemorySpace.ANY
+@@ -1297,13 +1313,25 @@ def _interpret_jaxpr(
+
+       if prim is primitives.load_p:
+         (ref, transforms, mask, _) = jax.tree.unflatten(
+             eqn.params['args_tree'], deferred_invals())
+         if mask is not None:
+           raise NotImplementedError('masked load_p')
+         memory_space = _get_memory_space_and_raise_if_hbm(
+             eqn.invars[0].aval, 'load_p'
+         )
+-        out = callback.io_callback(
++
++        # OPTIMIZATION: Use pure_callback for loads (no side effects)
++        if interpret_params.use_pure_callback_for_loads:
++          out = callback.pure_callback(
++              functools.partial(get, source_info=eqn.source_info),
++              eqn.outvars[0].aval,
++              device_id,
++              local_core_id,
++              TPU_MEMORY_SPACE_IDXS[memory_space],
++              ref,
++              transforms,
++          )
++        else:
++          out = callback.io_callback(
+             functools.partial(get, source_info=eqn.source_info),
+             eqn.outvars[0].aval,
+             device_id,
+@@ -1312,6 +1340,7 @@ def _interpret_jaxpr(
+             ref,
+             transforms,
+             ordered=True,
+         )
++        )
+
+       elif prim is primitives.swap_p:
+
+@@ -1900,13 +1929,32 @@ def _run_jaxpr(jaxpr, consts, *args):
+ def _run_jaxpr(jaxpr, consts, *args):
+   def _run(jaxpr, consts, *args):
+     jax_core.eval_jaxpr(jaxpr, consts, *args)
+   traced = jax.jit(_run, static_argnums=(0,)).trace(jaxpr, consts, *args)
+   traced.lower().compile()(consts, *args)
+   return
+
++# OPTIMIZATION: Cache compiled jaxprs to avoid recompilation
++_compiled_jaxpr_cache = {}
++
++def _run_jaxpr_cached(jaxpr, consts, *args):
++  """Run jaxpr with caching to avoid repeated compilation."""
++  # Create cache key from jaxpr structure
++  cache_key = (id(jaxpr), tuple(c.shape if hasattr(c, 'shape') else c for c in consts))
++
++  if cache_key not in _compiled_jaxpr_cache:
++    def _run(jaxpr, consts, *args):
++      jax_core.eval_jaxpr(jaxpr, consts, *args)
++    traced = jax.jit(_run, static_argnums=(0,)).trace(jaxpr, consts, *args)
++    _compiled_jaxpr_cache[cache_key] = traced.lower().compile()
++
++  compiled_fn = _compiled_jaxpr_cache[cache_key]
++  compiled_fn(consts, *args)
++  return
++
+ import concurrent.futures
+
+ def _thread_map_callback(jaxpr, num_threads, consts):
++  # Use cached version for better performance
++  run_fn = _run_jaxpr_cached if len(_compiled_jaxpr_cache) < 1000 else _run_jaxpr
++
+   num_threads = int(num_threads)
+   threads = []
+   with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+     for i in range(num_threads):
+       threads.append(
+-        executor.submit(_run_jaxpr, jaxpr, consts, jnp.int32(i)))
++        executor.submit(run_fn, jaxpr, consts, jnp.int32(i)))
+     exceptions = []
+     for i in range(num_threads):
+
+@@ -2150,12 +2198,29 @@ def interpret_pallas_call(
+     randomized_grid_coordinates = (jnp.array((), dtype=jnp.int32),) * len(grid)
+   else:
+     randomized_grid_coordinates = _get_randomized_grid_coordinates(
+         grid, compiler_params, interpret_params.random_seed  # type: ignore[arg-type]
+     )
+
++  # OPTIMIZATION: Pre-compute grid indices for all iterations if requested
++  precomputed_indices = None
++  if interpret_params.precompute_grid_indices and all(isinstance(g, int) for g in grid):
++    # Grid is static, we can pre-compute
++    all_indices = []
++    for i in range(functools.reduce(jnp.multiply, grid)):
++      loop_idx = _get_loop_indices(grid, i)
++      grid_point = _get_grid_point(loop_idx, randomized_grid_coordinates)
++      indices = [
++          _compute_start_indices(
++              bm, grid_point, *scalar_buffer_ids,
++              axis_sizes=axis_sizes, mesh=mesh, axis_indices=axis_indices,
++              device_id=device_id, local_core_id=jnp.int32(0),
++              compiler_params=compiler_params, interpret_params=interpret_params,
++          )
++          for bm in grid_mapping.block_mappings
++      ]
++      all_indices.append(indices)
++    precomputed_indices = all_indices
++
+   parallel_dim_semantics = _get_parallel_dim_semantics(
+       compiler_params, len(grid)
+   )
+   parallel_subgrid_size = _get_parallel_subgrid_size(
+       parallel_dim_semantics, grid  # type: ignore[arg-type]
+@@ -2252,6 +2317,14 @@ def interpret_pallas_call(
+       with pallas_core.grid_env(_get_local_grid_env(grid_point)):
+         next_loop_idx = _get_next_indices(grid, loop_idx)
+         next_grid_point = _get_grid_point(
+             next_loop_idx, randomized_grid_coordinates
+         )
++
++        # OPTIMIZATION: Use pre-computed indices if available
++        if precomputed_indices is not None:
++          next_block_indices, next_start_indices = precomputed_indices[iteration_idx + 1]
++        else:
++          # Compute indices dynamically as before
+         next_block_indices, next_start_indices = zip(*[
+             _compute_start_indices(
+                 bm,
