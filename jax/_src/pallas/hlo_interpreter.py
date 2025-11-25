@@ -100,12 +100,31 @@ def _dynamic_slice(
   return lax.squeeze(output, squeeze_dims)  # type: ignore[arg-type]
 
 
+def _dynamic_slice_precomputed(
+    start_idx, block_shape: tuple[int, ...], value, squeeze_dims,
+):
+  """Optimized version with precomputed squeeze_dims."""
+  start_idx = tuple(jnp.asarray(s, dtype=jnp.int32) for s in start_idx)
+  output = slicing.dynamic_slice(value, start_idx, slice_sizes=block_shape)
+  if squeeze_dims:
+    return lax.squeeze(output, squeeze_dims)  # type: ignore[arg-type]
+  return output
+
+
 def _dynamic_update_slice(start_idx, block_shape, value, update, is_squeeze):
   start_idx = tuple(jnp.asarray(s, dtype=jnp.int32) for s in start_idx)
   broadcast_dims = tuple(i for i, b in enumerate(is_squeeze)
                          if not b)
   update = lax.broadcast_in_dim(update, block_shape, broadcast_dims)
   assert update.shape == block_shape
+  return slicing.dynamic_update_slice(value, update, start_idx)
+
+
+def _dynamic_update_slice_precomputed(start_idx, block_shape, value, update, broadcast_dims):
+  """Optimized version with precomputed broadcast_dims."""
+  start_idx = tuple(jnp.asarray(s, dtype=jnp.int32) for s in start_idx)
+  if broadcast_dims != tuple(range(len(block_shape))):
+    update = lax.broadcast_in_dim(update, block_shape, broadcast_dims)
   return slicing.dynamic_update_slice(value, update, start_idx)
 
 
@@ -118,6 +137,35 @@ def _get_next_indices(grid, indices):
     carry = dim_size == i
     next_indices.append(jnp.where(carry, 0, i))
   return tuple(reversed(next_indices))
+
+
+def _get_next_indices_optimized(grid, indices):
+  """Optimized version that reduces where operations."""
+  if not grid:
+    return indices
+  # Convert to single array operation for better performance
+  indices_arr = jnp.stack(indices)
+  grid_arr = jnp.array(grid, dtype=jnp.int32)
+
+  # Increment the last index
+  incremented = indices_arr.at[-1].add(1)
+
+  # Check for overflow and propagate carry
+  overflows = incremented >= grid_arr
+
+  # Reset overflowed dimensions and carry to next
+  result = jnp.where(overflows, 0, incremented)
+
+  # Handle carry propagation (simplified for common cases)
+  if len(grid) > 1:
+    for i in range(len(grid) - 1, 0, -1):
+      carry = overflows[i]
+      result = result.at[i-1].add(jnp.where(carry, 1, 0))
+      overflows = overflows.at[i-1].set(jnp.logical_or(overflows[i-1],
+                                                        jnp.logical_and(carry, result[i-1] >= grid_arr[i-1])))
+      result = result.at[i-1].set(jnp.where(overflows[i-1], 0, result[i-1]))
+
+  return tuple(result)
 
 
 def _pad_to_block_dimension(value, block_shape: tuple[int, ...]):
@@ -406,6 +454,16 @@ def pallas_call_hlo_interpret(
       for bm in grid_mapping.block_mappings
   ]
 
+  # Precompute squeeze_dims and broadcast_dims for better performance
+  squeeze_dims_list = [
+      tuple(np.arange(len(is_sq))[np.array(is_sq, dtype=np.bool_)])
+      for is_sq in is_squeeze_dim
+  ]
+  broadcast_dims_list = [
+      tuple(i for i, b in enumerate(is_sq) if not b)
+      for is_sq in is_squeeze_dim
+  ]
+
   # Pad values to evenly divide into block dimensions. This matches the
   # behavior of the non-interpret mode. We pad with NaN, to make it easier
   # to catch OOB accesses.
@@ -454,8 +512,9 @@ def pallas_call_hlo_interpret(
           bm.compute_start_indices_interpret(loop_idx, *scalars)
           for bm in grid_mapping.block_mappings
       ]
-    blocks = map(_dynamic_slice, start_indices, block_shapes,
-                 carry_consts_ins, is_squeeze_dim)
+    # Use optimized versions with precomputed dimensions
+    blocks = map(_dynamic_slice_precomputed, start_indices, block_shapes,
+                 carry_consts_ins, squeeze_dims_list)
     with pallas_core.grid_env(local_grid_env):
       assert len(discharged_jaxpr.invars) == len(scalars) + len(blocks) + len(
           scratch_values
@@ -472,8 +531,9 @@ def pallas_call_hlo_interpret(
 
     _, out_inout, out_scratch = split_list(
         blocks, [grid_mapping.num_index_operands, num_inout_blocks])
-    out_carry = map(_dynamic_update_slice, start_indices, block_shapes,
-                    carry_consts_ins, out_inout, is_squeeze_dim)
+    # Use optimized version with precomputed dimensions
+    out_carry = map(_dynamic_update_slice_precomputed, start_indices, block_shapes,
+                    carry_consts_ins, out_inout, broadcast_dims_list)
     return (i + 1, _get_next_indices(grid, loop_idx),
             *out_carry, *out_scratch)
 
