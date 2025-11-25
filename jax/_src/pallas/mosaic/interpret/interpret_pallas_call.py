@@ -140,6 +140,13 @@ class InterpretParams:
   allow_hbm_allocation_in_run_scoped: bool = False
   vector_clock_size: int | None = None
 
+  # PERFORMANCE OPTIMIZATIONS
+  use_pure_callback_for_loads: bool = False
+  """If True, use pure_callback instead of io_callback for loads (allows XLA optimization)."""
+
+  batch_grid_iterations: int = 1
+  """Number of grid iterations to batch together (reduces callback overhead). Must be >= 1."""
+
 @contextlib.contextmanager
 def force_tpu_interpret_mode(params: InterpretParams = InterpretParams()):
   """Context manager that forces TPU interpret mode under its dynamic context.
@@ -1302,16 +1309,28 @@ def _interpret_jaxpr(
         memory_space = _get_memory_space_and_raise_if_hbm(
             eqn.invars[0].aval, 'load_p'
         )
-        out = callback.io_callback(
-            functools.partial(get, source_info=eqn.source_info),
-            eqn.outvars[0].aval,
-            device_id,
-            local_core_id,
-            TPU_MEMORY_SPACE_IDXS[memory_space],
-            ref,
-            transforms,
-            ordered=True,
-        )
+        # OPTIMIZATION: Use pure_callback for loads (no side effects)
+        if interpret_params.use_pure_callback_for_loads:
+          out = callback.pure_callback(
+              functools.partial(get, source_info=eqn.source_info),
+              eqn.outvars[0].aval,
+              device_id,
+              local_core_id,
+              TPU_MEMORY_SPACE_IDXS[memory_space],
+              ref,
+              transforms,
+          )
+        else:
+          out = callback.io_callback(
+              functools.partial(get, source_info=eqn.source_info),
+              eqn.outvars[0].aval,
+              device_id,
+              local_core_id,
+              TPU_MEMORY_SPACE_IDXS[memory_space],
+              ref,
+              transforms,
+              ordered=True,
+          )
 
       elif prim is primitives.swap_p:
         (ref, transforms, val, mask) = jax.tree.unflatten(
