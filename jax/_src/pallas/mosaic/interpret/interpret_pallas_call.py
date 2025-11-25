@@ -139,6 +139,7 @@ class InterpretParams:
   num_cores_per_device: int = 1
   allow_hbm_allocation_in_run_scoped: bool = False
   vector_clock_size: int | None = None
+  in_place: bool = False
 
 @contextlib.contextmanager
 def force_tpu_interpret_mode(params: InterpretParams = InterpretParams()):
@@ -600,6 +601,109 @@ def _to_range(transforms) -> tuple[slice | int, ...]:
         ret, tuple(_transform_slice_or_index(i) for i in transform.indices)
     )
   return ret
+
+def interpret_pallas_call_in_place(
+    *args,
+    jaxpr: jax_core.Jaxpr,
+    debug: bool,
+    input_output_aliases: tuple[tuple[int, int], ...],
+    grid_mapping: pallas_core.GridMapping,
+    mesh: pallas_core.Mesh | None,
+    compiler_params: dict[str, Any],
+    cost_estimate: pallas_core.CostEstimate,
+    out_avals: tuple[jax_core.AbstractValue, ...],
+    interpret_params: InterpretParams,
+    metadata: frozen_dict.FrozenDict[str, str] | None,
+    name: str | None,
+):
+  del debug, cost_estimate, out_avals, name
+  del metadata  # TODO(sharadmv): Add metadata to HLO.
+
+  if isinstance(mesh, mosaic_core.TensorCoreMesh):
+    # As a convenience for users, if we are interpreting a pl.core_map over a
+    # TensorCoreMesh, we automatically set the number of cores per device so
+    # that users don't have to specify it in the InterpretParams.
+    assert len(mesh.shape) == 1
+    interpret_params = dataclasses.replace(
+        interpret_params, num_cores_per_device=mesh.devices.shape[0])
+
+  args = [remove_memory_space_p.bind(a) for a in args]
+  # args contains: *dynamic_grid_sizes, *index, *inputs.  (No consts?)
+  dynamic_grid_args, scalars, input_args = split_list(
+      args,
+      [grid_mapping.num_dynamic_grid_bounds, grid_mapping.num_index_operands],
+  )
+  dynamic_grid_args_iter = iter(dynamic_grid_args)
+  grid = tuple(
+      a if a is not pallas_core.dynamic_grid_dim
+      else next(dynamic_grid_args_iter)
+      for a in grid_mapping.grid
+  )
+  assert next(dynamic_grid_args_iter, None) is None
+
+  axis_sizes = jax_core.get_axis_env().axis_sizes
+  axis_indices = {k: lax.axis_index(k) for k in axis_sizes.keys()}
+  device_id = _device_coords_to_logical_id(
+      tuple(axis_indices.values()), axis_sizes)
+
+  oi_alias_map = {v: k for k, v in input_output_aliases}
+  if any(i < 0 for i in oi_alias_map.keys()):
+    raise ValueError('Aliasing of scalar prefetch arguments is not currently '
+                     'supported in TPU interpret mode.')
+  output_vals = []
+  for i, bm in enumerate(grid_mapping.block_mappings_output):
+    if i in oi_alias_map:
+      output_vals.append(input_args[oi_alias_map[i]])
+    else:
+      output_vals.append(jnp.zeros(bm.array_aval.shape, bm.array_aval.dtype))
+
+  if grid:
+    num_iterations = functools.reduce(jnp.multiply, grid)
+  else:
+    num_iterations = 1
+
+  def _get_local_grid_env(grid_point):
+    if grid_mapping.local_grid_env is not None:
+      return grid_mapping.local_grid_env(grid_point, grid)
+    else:
+      return tuple(
+          pallas_core.GridAxis(idx, b)
+          for dim, (idx, b) in enumerate(zip(grid_point, grid))
+          if dim not in grid_mapping.vmapped_dims
+      )
+
+  def _body(
+      iteration_idx: jnp.int32,
+      carry: tuple[jnp.ndarray, ...],
+  ) -> tuple[jnp.ndarray, ...]:
+    loop_idx = _get_indices(grid, iteration_idx)
+    with pallas_core.grid_env(_get_local_grid_env(loop_idx)):
+      return _interpret_jaxpr_in_place(
+          jaxpr,
+          *loop_idx,
+          *carry,
+          axis_sizes=axis_sizes,
+          mesh=mesh,
+          axis_indices=axis_indices,
+          device_id=device_id,
+          local_core_id=0,
+          compiler_params=compiler_params,
+          interpret_params=interpret_params,
+      )
+
+  if num_iterations > 0:
+    results = lax.fori_loop(
+        0,
+        num_iterations,
+        _body,
+        (*scalars, *input_args, *output_vals),
+    )
+  else:
+    results = (*scalars, *input_args, *output_vals)
+
+  num_scalars = len(scalars)
+  num_inputs = len(input_args)
+  return results[num_scalars+num_inputs:]
 
 
 def _to_int(x: int | Array | None) -> int | None:
@@ -1239,6 +1343,85 @@ def _get_memory_space_and_raise_if_hbm(aval, primitive_name, message=None):
   return memory_space
 
 
+def _interpret_jaxpr_in_place(
+    jaxpr,
+    *args,
+    axis_sizes,
+    mesh,
+    axis_indices,
+    device_id,
+    local_core_id,
+    compiler_params,
+    interpret_params,
+):
+  env = {}
+  def read(var):
+    if isinstance(var, jax_core.Literal):
+      return var.val
+    return env[var]
+  def write(var, val):
+    env[var] = val
+  safe_map(write, jaxpr.invars, args)
+  for eqn in jaxpr.eqns:
+    invals = safe_map(read, eqn.invars)
+    if eqn.primitive is primitives.load_p:
+      (ref, *_) = invals
+      idx = tuple(
+          sl.start for sl in eqn.params["indexers_tree"].item()
+      )
+      out = lax.dynamic_slice(ref, idx, eqn.outvars[0].aval.shape)
+    elif eqn.primitive is primitives.swap_p:
+      (ref, value, *_) = invals
+      idx = tuple(
+          sl.start for sl in eqn.params["indexers_tree"].item()
+      )
+      out = lax.dynamic_slice(ref, idx, eqn.outvars[0].aval.shape)
+      ref = lax.dynamic_update_slice(ref, value, idx)
+      write(eqn.invars[0], ref)
+    else:
+      subfuns, bind_params = eqn.primitive.get_bind_params(eqn.params)
+      out = eqn.primitive.bind(*subfuns, *invals, **bind_params)
+    out = out if eqn.primitive.multiple_results else [out]
+    safe_map(write, eqn.outvars, out)
+  return safe_map(read, jaxpr.invars)
+
+def _compute_start_indices_in_place(
+    block_mapping, loop_idx, *args,
+    axis_sizes, mesh, axis_indices, device_id, local_core_id,
+    compiler_params, interpret_params):
+  jaxpr = block_mapping.index_map_jaxpr
+  block_indices = _interpret_jaxpr_in_place(
+      jaxpr.jaxpr,
+      *jaxpr.consts,
+      *loop_idx,
+      *args,
+      axis_sizes=axis_sizes,
+      mesh=mesh,
+      axis_indices=axis_indices,
+      device_id=device_id,
+      local_core_id=local_core_id,
+      compiler_params=compiler_params,
+      interpret_params=interpret_params,
+  )
+  def _get_start_index(i, b):
+    match b:
+      case pallas_core.Squeezed():
+        return i
+      case pallas_core.Element():
+        return i
+      case pallas_core.Blocked():
+        return i * b.block_size
+      case _:
+        raise ValueError(f"Unsupported block dim type: {type(b)}")
+  ret = jnp.array(
+      tuple(
+          _get_start_index(i, b)
+          for i, b in zip(block_indices, block_mapping.block_shape)
+      ),
+      dtype=jnp.int32,
+  )
+  return block_indices, ret
+
 def _interpret_jaxpr(
     jaxpr,
     *args,
@@ -1640,10 +1823,26 @@ def _compute_start_indices(
     block_mapping, loop_idx, *args,
     axis_sizes, mesh, axis_indices, device_id, local_core_id,
     compiler_params, interpret_params):
-  jaxpr = block_mapping.index_map_jaxpr
-  block_indices = _interpret_jaxpr(
-      jaxpr.jaxpr,
-      *jaxpr.consts,
+  if interpret_params.in_place:
+    jaxpr = block_mapping.index_map_jaxpr
+    block_indices = _interpret_jaxpr_in_place(
+        jaxpr.jaxpr,
+        *jaxpr.consts,
+        *loop_idx,
+        *args,
+        axis_sizes=axis_sizes,
+        mesh=mesh,
+        axis_indices=axis_indices,
+        device_id=device_id,
+        local_core_id=local_core_id,
+        compiler_params=compiler_params,
+        interpret_params=interpret_params,
+    )
+  else:
+    jaxpr = block_mapping.index_map_jaxpr
+    block_indices = _interpret_jaxpr(
+        jaxpr.jaxpr,
+        *jaxpr.consts,
       *loop_idx,
       *args,
       axis_sizes=axis_sizes,
@@ -1954,6 +2153,21 @@ def interpret_pallas_call(
     metadata: frozen_dict.FrozenDict[str, str] | None,
     name: str | None,
 ):
+  if interpret_params.in_place:
+    return interpret_pallas_call_in_place(
+        *args,
+        jaxpr=jaxpr,
+        debug=debug,
+        input_output_aliases=input_output_aliases,
+        grid_mapping=grid_mapping,
+        mesh=mesh,
+        compiler_params=compiler_params,
+        cost_estimate=cost_estimate,
+        out_avals=out_avals,
+        interpret_params=interpret_params,
+        metadata=metadata,
+        name=name,
+    )
   del debug, cost_estimate, out_avals, name
   del metadata  # TODO(sharadmv): Add metadata to HLO.
 
