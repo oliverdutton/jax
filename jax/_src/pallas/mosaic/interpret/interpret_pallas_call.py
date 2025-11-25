@@ -187,6 +187,7 @@ _shared_memory: memory.SharedMemory | None = None
 _shared_memory_init_lock = threading.Lock()
 races: RaceDetectionState | None = None
 dma_id_counter: Counter | None = None
+_kernel_compilation_cache_lock = threading.Lock()
 
 def reset_tpu_interpret_mode_state():
   """Resets all global, shared state used by TPU interpret mode.
@@ -1897,12 +1898,39 @@ def _thread_map(f, num_threads):
 
   _call_threadmap_callback(jaxpr.jaxpr, num_threads, *jaxpr.consts)
 
-def _run_jaxpr(jaxpr, consts, *args):
+_COMPILED_KERNEL_CACHE = {}
+
+def _get_compiled_kernel(jaxpr, consts, *args):
+  # TODO(jburnim): Don't re-compile kernel for different consts with same shapes.
+  flat_consts, _ = jax.tree_util.tree_flatten(consts)
+  # TODO(jburnim): Clear this cache when any of the non-static args change.
+  # For now, we assume that any non-static args are scoped to a single pallas_call.
+  flat_args, _ = jax.tree_util.tree_flatten(args)
+  # A hash of the jaxpr and the shapes of the consts and args.
+  # TODO(jburnim): Any better way to do this?
+  key = (
+      hash(str(jaxpr)),
+      *(c.shape for c in flat_consts),
+      *(a.shape for a in flat_args),
+  )
+
+  if key in _COMPILED_KERNEL_CACHE:
+    return _COMPILED_KERNEL_CACHE[key]
+
   def _run(jaxpr, consts, *args):
     jax_core.eval_jaxpr(jaxpr, consts, *args)
-  traced = jax.jit(_run, static_argnums=(0,)).trace(jaxpr, consts, *args)
-  traced.lower().compile()(consts, *args)
-  return
+
+  with _kernel_compilation_cache_lock:
+    if key in _COMPILED_KERNEL_CACHE:
+      return _COMPILED_KERNEL_CACHE[key]
+    traced = jax.jit(_run, static_argnums=(0,)).trace(jaxpr, consts, *args)
+    compiled = traced.lower().compile()
+    _COMPILED_KERNEL_CACHE[key] = compiled
+    return compiled
+
+def _run_jaxpr(jaxpr, consts, *args):
+  compiled = _get_compiled_kernel(jaxpr, consts, *args)
+  compiled(consts, *args)
 
 import concurrent.futures
 
