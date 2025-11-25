@@ -6,7 +6,7 @@ from tallax.utils import is_cpu_platform
 
 def run_benchmarks():
   ntoken = 8
-  interpret = False
+  interpret = True
   for num_operands in range(1,2):
     for num_keys in range(1, num_operands+1):
       for n in (
