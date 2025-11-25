@@ -1897,11 +1897,27 @@ def _thread_map(f, num_threads):
 
   _call_threadmap_callback(jaxpr.jaxpr, num_threads, *jaxpr.consts)
 
+# OPTIMIZATION: Cache compiled jaxprs to avoid repeated compilation
+_compiled_jaxpr_cache = {}
+_cache_lock = threading.Lock()
+
 def _run_jaxpr(jaxpr, consts, *args):
-  def _run(jaxpr, consts, *args):
-    jax_core.eval_jaxpr(jaxpr, consts, *args)
-  traced = jax.jit(_run, static_argnums=(0,)).trace(jaxpr, consts, *args)
-  traced.lower().compile()(consts, *args)
+  """Run jaxpr with caching to avoid repeated compilation."""
+  # Create a cache key based on jaxpr identity and const shapes
+  cache_key = (id(jaxpr), tuple(
+      (c.shape, c.dtype) if hasattr(c, 'shape') else id(c) for c in consts))
+
+  with _cache_lock:
+    if cache_key not in _compiled_jaxpr_cache:
+      def _run(jaxpr, consts, *args):
+        jax_core.eval_jaxpr(jaxpr, consts, *args)
+      traced = jax.jit(_run, static_argnums=(0,)).trace(jaxpr, consts, *args)
+      compiled_fn = traced.lower().compile()
+      _compiled_jaxpr_cache[cache_key] = compiled_fn
+    else:
+      compiled_fn = _compiled_jaxpr_cache[cache_key]
+
+  compiled_fn(consts, *args)
   return
 
 import concurrent.futures
