@@ -420,11 +420,28 @@ def pallas_call_hlo_interpret(
       for a in grid_mapping.grid
   )
   assert next(dynamic_grid_args_iter, None) is None
-  discharged_jaxpr, discharged_consts, scratch_avals = kernel_to_hlo_jaxpr(
-      jaxpr, (), grid_mapping, backend=backend)
+  # Cache kernel_to_hlo_jaxpr results to avoid recomputation
+  cache_key = (id(jaxpr), id(grid_mapping), backend)
+  if not hasattr(pallas_call_hlo_interpret, '_jaxpr_cache'):
+    pallas_call_hlo_interpret._jaxpr_cache = {}
+
+  if cache_key in pallas_call_hlo_interpret._jaxpr_cache:
+    discharged_jaxpr, discharged_consts, scratch_avals = pallas_call_hlo_interpret._jaxpr_cache[cache_key]
+  else:
+    discharged_jaxpr, discharged_consts, scratch_avals = kernel_to_hlo_jaxpr(
+        jaxpr, (), grid_mapping, backend=backend)
+    pallas_call_hlo_interpret._jaxpr_cache[cache_key] = (discharged_jaxpr, discharged_consts, scratch_avals)
+
   if debug:
     print(f"\nJaxpr of the the kernel in pallas_call {debug_info.func_src_info}:")
     print(discharged_jaxpr)
+
+  # Log jaxpr complexity for debugging
+  if debug or True:  # Always log for now
+    num_eqns = len(discharged_jaxpr.eqns)
+    num_invars = len(discharged_jaxpr.invars)
+    num_outvars = len(discharged_jaxpr.outvars)
+    print(f"[Pallas Interpret] Discharged jaxpr: {num_eqns} equations, {num_invars} inputs, {num_outvars} outputs, grid={grid}")
   out = _initialize_output_vals(grid_mapping.block_mappings_output,
                                 args, input_output_aliases)
   # TODO(b/370563936): Fix correctness issue w/ io aliasing
