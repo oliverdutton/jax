@@ -12,7 +12,12 @@ os.environ['XLA_FLAGS'] = (
     '--xla_cpu_fast_math_honor_functions=false '
     '--xla_cpu_enable_fast_min_max=true '
     '--xla_force_host_platform_device_count=1 '
-    '--xla_cpu_use_thunk_runtime=false'
+    '--xla_cpu_use_thunk_runtime=false '
+    # Disable expensive optimizations to speed up compilation
+    '--xla_disable_hlo_passes=algsimp,allgather-combiner,all-reduce-combiner,'
+    'reduce-scatter-combiner,conditional-canonicalizer,'
+    'algebraic-simplifier,layout-assignment '
+    '--xla_backend_optimization_level=1'
 )
 
 import jax
@@ -27,6 +32,9 @@ jax.config.update('jax_compilation_cache_dir', '/tmp/jax_cache')
 def run_benchmarks():
   ntoken = 8
   interpret = True
+  # Enable debug mode to see jaxpr details
+  import os
+  os.environ['PALLAS_DEBUG'] = '1'
   for num_operands in range(1,2):
     for num_keys in range(1, num_operands+1):
       for n in (
