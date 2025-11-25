@@ -30,3 +30,6 @@ jax.iml
 /include/
 /lib/
 /share/
+
+# External dependencies
+/tallax/
