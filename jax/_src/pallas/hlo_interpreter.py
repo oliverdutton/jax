@@ -377,6 +377,11 @@ def pallas_call_hlo_interpret(
   if debug:
     print(f"\nJaxpr of the the kernel in pallas_call {debug_info.func_src_info}:")
     print(discharged_jaxpr)
+
+  # Convert jaxpr to a callable function instead of interpreting it
+  # equation-by-equation. The while_loop's JIT will compile this automatically.
+  jaxpr_func = jax_core.jaxpr_as_fun(jax_core.ClosedJaxpr(discharged_jaxpr, discharged_consts))
+  print("[OPTIMIZED] Using jaxpr_as_fun for compiled execution instead of eval_jaxpr")
   out = _initialize_output_vals(grid_mapping.block_mappings_output,
                                 args, input_output_aliases)
   # TODO(b/370563936): Fix correctness issue w/ io aliasing
@@ -466,9 +471,8 @@ def pallas_call_hlo_interpret(
           len(scratch_values),
       )
 
-      blocks = jax_core.eval_jaxpr(
-          discharged_jaxpr, discharged_consts, *scalars, *blocks, *scratch
-      )
+      # Use jaxpr_as_fun instead of eval_jaxpr for better performance
+      blocks = jaxpr_func(*scalars, *blocks, *scratch)
 
     _, out_inout, out_scratch = split_list(
         blocks, [grid_mapping.num_index_operands, num_inout_blocks])
