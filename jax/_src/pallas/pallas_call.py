@@ -1418,7 +1418,13 @@ def _pallas_call_lowering(
   def cpu_lowering(ctx: mlir.LoweringRuleContext,
                    *in_nodes: mlir.ir.Value | Sequence[mlir.ir.Value],
                    **params):
-    raise ValueError("Only interpret mode is supported on CPU backend.")
+    # Use HLO interpreter for CPU backend
+    # Remove 'interpret' from params as it's not expected by pallas_call_hlo_interpret
+    filtered_params = {k: v for k, v in params.items() if k != 'interpret'}
+    impl = partial(hlo_interpreter.pallas_call_hlo_interpret,
+                   backend=backend,
+                   **filtered_params)
+    return mlir.lower_fun(impl, multiple_results=True)(ctx, *in_nodes)
 
   def tpu_lowering(ctx: mlir.LoweringRuleContext,
                    *in_nodes: mlir.ir.Value | Sequence[mlir.ir.Value],
