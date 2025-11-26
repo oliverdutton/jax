@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 from jax._src import core as jax_core
 from jax._src import lax_reference
+from jax._src.lax import slicing as lax_slicing
 from jax._src.pallas import core as pallas_core
 from jax._src.pallas import primitives as pallas_primitives
 from jax._src.pallas import pallas_call
@@ -68,6 +69,12 @@ _NUMPY_IMPL = {
     'gt': np.greater,
     'le': np.less_equal,
     'lt': np.less,
+
+    # Logical
+    'and': np.logical_and,
+    'or': np.logical_or,
+    'not': np.logical_not,
+    'xor': np.logical_xor,
 
     # Bitwise
     'bitwise_not': np.bitwise_not,
@@ -203,10 +210,49 @@ def eval_jaxpr_numpy(
 
       result = old_val
 
+    elif prim.name == 'select_n':
+      # Select from multiple options based on index
+      # First arg is the index, rest are the options
+      which = in_vals[0]
+      cases = in_vals[1:]
+      # Use np.choose for element-wise selection
+      # np.choose requires which to be int32 and in range [0, len(cases))
+      result = np.choose(which, cases)
+
+    elif prim.name == 'iota':
+      # Create array with incrementing values along a dimension
+      dtype = eqn.params['dtype']
+      shape = eqn.params['shape']
+      dimension = eqn.params['dimension']
+      # Create array of indices along the specified dimension
+      result = np.arange(shape[dimension], dtype=dtype)
+      # Broadcast to full shape
+      new_shape = [1] * len(shape)
+      new_shape[dimension] = shape[dimension]
+      result = result.reshape(new_shape)
+      result = np.broadcast_to(result, shape).copy()
+
+    # gather is too complex with batching dims - skip for now
+    # It will fall back to HLO interpreter
+
     # Handle standard JAX primitives
     elif prim.name in _NUMPY_IMPL:
       impl = _NUMPY_IMPL[prim.name]
-      result = impl(*in_vals, **eqn.params)
+      # Handle parameter name mapping and filtering
+      params = dict(eqn.params)
+      if prim.name == 'convert_element_type':
+        if 'new_dtype' in params:
+          params['dtype'] = params.pop('new_dtype')
+        # Filter out parameters that lax_reference doesn't accept
+        params = {k: v for k, v in params.items() if k in ['dtype']}
+      elif prim.name == 'transpose':
+        # NumPy uses 'axes' instead of 'permutation'
+        if 'permutation' in params:
+          params['axes'] = params.pop('permutation')
+      elif prim.name == 'reshape':
+        # Filter out JAX-specific parameters
+        params = {k: v for k, v in params.items() if k in ['new_sizes', 'dimensions']}
+      result = impl(*in_vals, **params)
 
     # Handle higher-order primitives
     elif prim.name == 'cond':
@@ -265,11 +311,19 @@ def eval_jaxpr_numpy(
       else:
         result = carry
 
+    elif prim.name == 'jit':
+      # JIT primitive - in interpret mode, just evaluate the jaxpr directly
+      jit_jaxpr = eqn.params['jaxpr']
+      result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *in_vals, grid_env=grid_env)
+      # Don't unwrap - jit primitive uses multiple_results to determine how to handle result
+
     else:
       raise NotImplementedError(f"Primitive {prim.name} not implemented in NumPy interpreter")
 
     # Write results
     if prim.multiple_results:
+      if not isinstance(result, (list, tuple)):
+        raise RuntimeError(f"Primitive {prim.name} has multiple_results=True but returned {type(result)}: {result}. Expected list/tuple. outvars: {len(eqn.outvars)}")
       for v, r in zip(eqn.outvars, result):
         write(v, r)
     else:
@@ -298,16 +352,36 @@ def pallas_call_numpy_interpret(
   # First, let's see what primitives are in the jaxpr
   print(f"[NumPy Interpreter] Analyzing jaxpr with {len(jaxpr.eqns)} equations...")
 
-  # Collect all primitives used
+  # Collect all primitives used (recursively scan nested jaxprs)
+  def collect_primitives(jaxpr, prims_dict):
+    """Recursively collect all primitives from jaxpr including nested ones."""
+    for eqn in jaxpr.eqns:
+      prim_name = eqn.primitive.name
+      prims_dict[prim_name] = prims_dict.get(prim_name, 0) + 1
+
+      # Check for nested jaxprs in parameters
+      if prim_name in ['scan', 'while', 'cond', 'jit']:
+        if 'jaxpr' in eqn.params:
+          nested = eqn.params['jaxpr']
+          if hasattr(nested, 'jaxpr'):
+            collect_primitives(nested.jaxpr, prims_dict)
+        if 'cond_jaxpr' in eqn.params:
+          collect_primitives(eqn.params['cond_jaxpr'].jaxpr, prims_dict)
+        if 'body_jaxpr' in eqn.params:
+          collect_primitives(eqn.params['body_jaxpr'].jaxpr, prims_dict)
+        if 'branches' in eqn.params:
+          for branch in eqn.params['branches']:
+            if hasattr(branch, 'jaxpr'):
+              collect_primitives(branch.jaxpr, prims_dict)
+
   primitives_used = {}
-  for eqn in jaxpr.eqns:
-    prim_name = eqn.primitive.name
-    primitives_used[prim_name] = primitives_used.get(prim_name, 0) + 1
+  collect_primitives(jaxpr, primitives_used)
 
   # Primitives we can handle
+  # Note: gather is complex with batching dims, so we fall back to HLO for it
   supported_prims = set(_NUMPY_IMPL.keys()) | {
       'program_id', 'num_programs', 'get', 'swap', 'addupdate',
-      'scan', 'while', 'cond'
+      'scan', 'while', 'cond', 'jit', 'select_n', 'iota'
   }
 
   print(f"[NumPy Interpreter] Primitives used:")
@@ -340,16 +414,60 @@ def pallas_call_numpy_interpret(
   print(f"[NumPy Interpreter] Input args: {len(args)}")
   print(f"[NumPy Interpreter] Expected output avals: {len(out_avals)}")
 
-  # For now, fall back since we need to handle scratch refs properly
-  print(f"[NumPy Interpreter] TODO: Need to create scratch refs - falling back...")
-  filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'interpret'}
-  return hlo_interpreter.pallas_call_hlo_interpret(
-      *args,
-      jaxpr=jaxpr,
-      grid_mapping=grid_mapping,
-      out_avals=out_avals,
-      **filtered_kwargs
-  )
+  # Create scratch refs - these are the extra invars beyond the input args
+  # The jaxpr expects: [*input_refs, *output_refs, *scratch_refs]
+  num_input_refs = len(args)
+  num_output_refs = len(out_avals)
+  num_scratch_refs = len(jaxpr.invars) - num_input_refs - num_output_refs
+
+  print(f"[NumPy Interpreter] Creating {num_scratch_refs} scratch refs...")
+
+  # Use io_callback to execute in NumPy
+  def numpy_kernel(*jax_args):
+    # Convert JAX arrays to NumPy (these are the input refs)
+    input_refs = [np.asarray(arg) if hasattr(arg, '__array__') else arg
+                  for arg in jax_args]
+
+    # Create output refs as mutable NumPy arrays
+    output_refs = [np.zeros(aval.shape, dtype=aval.dtype) for aval in out_avals]
+
+    # Create scratch refs from the jaxpr invars
+    scratch_refs = []
+    for i in range(num_scratch_refs):
+      invar_idx = num_input_refs + num_output_refs + i
+      scratch_aval = jaxpr.invars[invar_idx].aval
+      # Extract inner aval from Ref type
+      if hasattr(scratch_aval, 'inner_aval'):
+        inner_aval = scratch_aval.inner_aval
+        scratch_shape = inner_aval.shape
+        scratch_dtype = inner_aval.dtype
+      else:
+        scratch_shape = scratch_aval.shape
+        scratch_dtype = scratch_aval.dtype
+      scratch_refs.append(np.zeros(scratch_shape, dtype=scratch_dtype))
+
+    # Combine all refs in the order the jaxpr expects
+    all_refs = input_refs + output_refs + scratch_refs
+
+    print(f"[NumPy Interpreter] Executing with {len(all_refs)} refs (NumPy arrays)")
+
+    # Get grid
+    grid = grid_mapping.grid
+
+    # Iterate over grid
+    if not grid:
+      # No grid, run once
+      grid_env = {}
+      eval_jaxpr_numpy(jaxpr, [], *all_refs, grid_env=grid_env)
+    else:
+      # Multi-dimensional grid
+      import itertools
+      for indices in itertools.product(*[range(g) for g in grid]):
+        grid_env = {i: (idx, size) for i, (idx, size) in enumerate(zip(indices, grid))}
+        eval_jaxpr_numpy(jaxpr, [], *all_refs, grid_env=grid_env)
+
+    # Return the output refs (which have been modified in place)
+    return output_refs
 
   # Build result shape
   result_shapes = [jax.ShapeDtypeStruct(aval.shape, aval.dtype) for aval in out_avals]
