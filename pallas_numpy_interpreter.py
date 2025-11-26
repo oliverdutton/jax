@@ -9,7 +9,7 @@ import functools
 import numpy as np
 import jax
 import jax.numpy as jnp
-from jax import core as jax_core
+from jax._src import core as jax_core
 from jax._src import lax_reference
 from jax._src.pallas import core as pallas_core
 from jax._src.pallas import primitives as pallas_primitives
@@ -147,14 +147,14 @@ def eval_jaxpr_numpy(
     prim = eqn.primitive
 
     # Handle Pallas-specific primitives
-    if prim is pallas_primitives.program_id_p:
+    if prim.name == 'program_id':
       axis = eqn.params['axis']
       if axis in grid_env:
         result = np.int32(grid_env[axis][0])
       else:
         result = np.int32(0)
 
-    elif prim is pallas_primitives.num_programs_p:
+    elif prim.name == 'num_programs':
       axis = eqn.params['axis']
       if axis in grid_env:
         result = np.int32(grid_env[axis][1])
@@ -162,7 +162,7 @@ def eval_jaxpr_numpy(
         result = np.int32(1)
 
     # Handle state primitives (refs)
-    elif isinstance(prim, state.GetPrim):
+    elif prim.name == 'get':
       # Reading from a ref
       ref_val = in_vals[0]
       indexer = eqn.params.get('indexer', None)
@@ -172,7 +172,7 @@ def eval_jaxpr_numpy(
         # Apply indexing
         result = ref_val[indexer.indices]
 
-    elif isinstance(prim, state.SwapPrim):
+    elif prim.name == 'swap':
       # Writing to a ref
       ref_val = in_vals[0]
       new_val = in_vals[1]
@@ -188,7 +188,7 @@ def eval_jaxpr_numpy(
 
       result = old_val
 
-    elif isinstance(prim, state.AddUpdatePrim):
+    elif prim.name == 'addupdate':
       # Atomic add
       ref_val = in_vals[0]
       update_val = in_vals[1]
@@ -293,14 +293,56 @@ def pallas_call_numpy_interpret(
   """
   from jax._src.pallas import hlo_interpreter
 
-  # For now, fall back to the standard HLO interpreter
-  # This already does what we want - interprets the jaxpr
-  # TODO: Progressively replace operations with pure NumPy via io_callback
   print(f"[NumPy Interpreter] Intercepted pallas_call with grid={grid_mapping.grid}")
 
-  # Filter out the 'interpret' kwarg since HLO interpreter doesn't expect it
-  filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'interpret'}
+  # First, let's see what primitives are in the jaxpr
+  print(f"[NumPy Interpreter] Analyzing jaxpr with {len(jaxpr.eqns)} equations...")
 
+  # Collect all primitives used
+  primitives_used = {}
+  for eqn in jaxpr.eqns:
+    prim_name = eqn.primitive.name
+    primitives_used[prim_name] = primitives_used.get(prim_name, 0) + 1
+
+  # Primitives we can handle
+  supported_prims = set(_NUMPY_IMPL.keys()) | {
+      'program_id', 'num_programs', 'get', 'swap', 'addupdate',
+      'scan', 'while', 'cond'
+  }
+
+  print(f"[NumPy Interpreter] Primitives used:")
+  for prim_name, count in sorted(primitives_used.items()):
+    implemented = prim_name in supported_prims
+    status = "✓" if implemented else "✗"
+    print(f"  {status} {prim_name}: {count}")
+
+  # Check if all primitives are supported
+  unsupported = [p for p in primitives_used.keys() if p not in supported_prims]
+
+  if unsupported:
+    print(f"[NumPy Interpreter] Unsupported primitives: {unsupported}")
+    print(f"[NumPy Interpreter] Falling back to HLO interpreter...")
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'interpret'}
+    return hlo_interpreter.pallas_call_hlo_interpret(
+        *args,
+        jaxpr=jaxpr,
+        grid_mapping=grid_mapping,
+        out_avals=out_avals,
+        **filtered_kwargs
+    )
+
+  # All primitives supported - use NumPy interpreter!
+  print(f"[NumPy Interpreter] Using pure NumPy interpretation!")
+
+  # Debug: print jaxpr structure
+  print(f"[NumPy Interpreter] Jaxpr invars: {len(jaxpr.invars)}")
+  print(f"[NumPy Interpreter] Jaxpr outvars: {len(jaxpr.outvars)}")
+  print(f"[NumPy Interpreter] Input args: {len(args)}")
+  print(f"[NumPy Interpreter] Expected output avals: {len(out_avals)}")
+
+  # For now, fall back since we need to handle scratch refs properly
+  print(f"[NumPy Interpreter] TODO: Need to create scratch refs - falling back...")
+  filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'interpret'}
   return hlo_interpreter.pallas_call_hlo_interpret(
       *args,
       jaxpr=jaxpr,
@@ -308,6 +350,12 @@ def pallas_call_numpy_interpret(
       out_avals=out_avals,
       **filtered_kwargs
   )
+
+  # Build result shape
+  result_shapes = [jax.ShapeDtypeStruct(aval.shape, aval.dtype) for aval in out_avals]
+
+  # Use io_callback to execute
+  return io_callback(numpy_kernel, result_shapes, *args)
 
 
 # Monkey-patch to intercept Pallas calls
