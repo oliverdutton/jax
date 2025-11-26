@@ -238,26 +238,62 @@ def eval_jaxpr_numpy(
       result = np.broadcast_to(result, shape).copy()
 
     elif prim.name == 'gather':
-      # Gather using np.take_along_axis for the common pattern
+      # Gather using advanced NumPy indexing
       operand = in_vals[0]
       start_indices = in_vals[1]
       dimension_numbers = eqn.params['dimension_numbers']
       slice_sizes = tuple(eqn.params['slice_sizes'])
 
-      # For the common case with batching dimensions, use take_along_axis
       operand_batching_dims = getattr(dimension_numbers, 'operand_batching_dims', ())
       start_indices_batching_dims = getattr(dimension_numbers, 'start_indices_batching_dims', ())
       collapsed_slice_dims = tuple(dimension_numbers.collapsed_slice_dims)
       start_index_map = tuple(dimension_numbers.start_index_map)
 
-      # Simple case: batched gather along one dimension
-      if len(start_index_map) == 1 and len(collapsed_slice_dims) == 1:
+      # Handle batched gather
+      if operand_batching_dims and len(start_index_map) == 1 and len(collapsed_slice_dims) == 1:
+        # Batched gather: for each batch element, gather from the specified dimension
+        # Example: operand (8, 128), indices (8, 128, 1) with batch dim 1
+        # Result should be (8, 128) where result[i,j] = operand[indices[i,j,0], j]
+
+        batch_dim = operand_batching_dims[0]
+        gather_dim = start_index_map[0]
+
+        # Squeeze trailing dimension from indices
+        indices = start_indices.squeeze(-1) if start_indices.shape[-1] == 1 else start_indices
+
+        # Debug first gather
+        import sys
+        if not hasattr(sys, '_gather_debug_count'):
+          sys._gather_debug_count = 0
+        if sys._gather_debug_count == 0:
+          print(f"[DEBUG gather] operand.shape={operand.shape}, operand.dtype={operand.dtype}")
+          print(f"[DEBUG gather] indices.shape={indices.shape}, indices.dtype={indices.dtype}")
+          print(f"[DEBUG gather] batch_dim={batch_dim}, gather_dim={gather_dim}")
+          print(f"[DEBUG gather] sample operand[0,:5]={operand[0,:5]}")
+          print(f"[DEBUG gather] sample indices[0,:5]={indices[0,:5]}")
+          sys._gather_debug_count += 1
+
+        # Build advanced indexing arrays
+        # For operand[indices, batch_idx] where we gather from gather_dim and keep batch_dim
+        if gather_dim == 0 and batch_dim == 1:
+          # operand[indices[i,j], j] for all i,j
+          batch_idx = np.arange(operand.shape[batch_dim])[None, :]
+          result = operand[indices.astype(np.intp), batch_idx]
+          if sys._gather_debug_count == 1:
+            print(f"[DEBUG gather] result.shape={result.shape}, result[0,:5]={result[0,:5]}")
+            sys._gather_debug_count += 1
+        elif gather_dim == 1 and batch_dim == 0:
+          # operand[i, indices[i,j]] for all i,j
+          batch_idx = np.arange(operand.shape[batch_dim])[:, None]
+          result = operand[batch_idx, indices.astype(np.intp)]
+        else:
+          raise NotImplementedError(f"Batched gather with gather_dim={gather_dim}, batch_dim={batch_dim}")
+      elif len(start_index_map) == 1 and len(collapsed_slice_dims) == 1 and not operand_batching_dims:
+        # Simple non-batched gather
         axis = start_index_map[0]
-        # Remove the trailing dimension from indices if present
         indices = start_indices.squeeze(-1) if start_indices.shape[-1] == 1 else start_indices
         result = np.take_along_axis(operand, indices.astype(np.intp), axis=axis)
       else:
-        # More complex gather - would need full implementation
         raise NotImplementedError(f"Complex gather pattern not yet supported: dimension_numbers={dimension_numbers}")
 
     # Handle standard JAX primitives
