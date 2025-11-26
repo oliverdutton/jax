@@ -138,6 +138,11 @@ def eval_jaxpr_numpy(
     return env[v]
 
   def write(v: jax_core.Var, val: Any) -> None:
+    # Ensure refs are writable (not read-only views)
+    if hasattr(v.aval, 'inner_aval') and isinstance(val, np.ndarray):
+      # This is a ref - ensure it's writable
+      if not val.flags.writeable:
+        val = val.copy()
     env[v] = val
 
   env: dict[jax_core.Var, Any] = {}
@@ -232,8 +237,28 @@ def eval_jaxpr_numpy(
       result = result.reshape(new_shape)
       result = np.broadcast_to(result, shape).copy()
 
-    # gather is too complex with batching dims - skip for now
-    # It will fall back to HLO interpreter
+    elif prim.name == 'gather':
+      # Gather using np.take_along_axis for the common pattern
+      operand = in_vals[0]
+      start_indices = in_vals[1]
+      dimension_numbers = eqn.params['dimension_numbers']
+      slice_sizes = tuple(eqn.params['slice_sizes'])
+
+      # For the common case with batching dimensions, use take_along_axis
+      operand_batching_dims = getattr(dimension_numbers, 'operand_batching_dims', ())
+      start_indices_batching_dims = getattr(dimension_numbers, 'start_indices_batching_dims', ())
+      collapsed_slice_dims = tuple(dimension_numbers.collapsed_slice_dims)
+      start_index_map = tuple(dimension_numbers.start_index_map)
+
+      # Simple case: batched gather along one dimension
+      if len(start_index_map) == 1 and len(collapsed_slice_dims) == 1:
+        axis = start_index_map[0]
+        # Remove the trailing dimension from indices if present
+        indices = start_indices.squeeze(-1) if start_indices.shape[-1] == 1 else start_indices
+        result = np.take_along_axis(operand, indices.astype(np.intp), axis=axis)
+      else:
+        # More complex gather - would need full implementation
+        raise NotImplementedError(f"Complex gather pattern not yet supported: dimension_numbers={dimension_numbers}")
 
     # Handle standard JAX primitives
     elif prim.name in _NUMPY_IMPL:
@@ -252,7 +277,14 @@ def eval_jaxpr_numpy(
       elif prim.name == 'reshape':
         # Filter out JAX-specific parameters
         params = {k: v for k, v in params.items() if k in ['new_sizes', 'dimensions']}
-      result = impl(*in_vals, **params)
+      elif prim.name == 'concatenate':
+        # concatenate takes (operands, dimension) as positional args
+        dimension = params.get('dimension', 0)
+        result = impl(in_vals, dimension)
+        params = {}  # Don't pass params again
+
+      if params or prim.name != 'concatenate':
+        result = impl(*in_vals, **params)
 
     # Handle higher-order primitives
     elif prim.name == 'cond':
@@ -378,10 +410,9 @@ def pallas_call_numpy_interpret(
   collect_primitives(jaxpr, primitives_used)
 
   # Primitives we can handle
-  # Note: gather is complex with batching dims, so we fall back to HLO for it
   supported_prims = set(_NUMPY_IMPL.keys()) | {
       'program_id', 'num_programs', 'get', 'swap', 'addupdate',
-      'scan', 'while', 'cond', 'jit', 'select_n', 'iota'
+      'scan', 'while', 'cond', 'jit', 'select_n', 'iota', 'gather'
   }
 
   print(f"[NumPy Interpreter] Primitives used:")
