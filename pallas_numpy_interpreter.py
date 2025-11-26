@@ -70,11 +70,11 @@ _NUMPY_IMPL = {
     'le': np.less_equal,
     'lt': np.less,
 
-    # Logical
-    'and': np.logical_and,
-    'or': np.logical_or,
-    'not': np.logical_not,
-    'xor': np.logical_xor,
+    # Logical (JAX returns int32, not bool)
+    'and': lambda x, y: np.logical_and(x, y).astype(np.int32),
+    'or': lambda x, y: np.logical_or(x, y).astype(np.int32),
+    'not': lambda x: np.logical_not(x).astype(np.int32),
+    'xor': lambda x, y: np.logical_xor(x, y).astype(np.int32),
 
     # Bitwise
     'bitwise_not': np.bitwise_not,
@@ -183,6 +183,13 @@ def eval_jaxpr_numpy(
       else:
         # Apply indexing
         result = ref_val[indexer.indices]
+
+      # Debug: check if we're reading the right dtype
+      if not hasattr(prim, '_get_debug_count'):
+        prim._get_debug_count = 0
+      if prim._get_debug_count < 2 and isinstance(ref_val, np.ndarray):
+        print(f"[DEBUG get] ref dtype: {ref_val.dtype}, result dtype: {result.dtype if isinstance(result, np.ndarray) else type(result)}")
+        prim._get_debug_count += 1
 
     elif prim.name == 'swap':
       # Writing to a ref
@@ -395,6 +402,13 @@ def eval_jaxpr_numpy(
       for v, r in zip(eqn.outvars, result):
         write(v, r)
     else:
+      # Debug dtype tracking
+      if isinstance(result, np.ndarray) and hasattr(eqn.outvars[0].aval, 'dtype'):
+        expected_dtype = eqn.outvars[0].aval.dtype
+        if result.dtype != expected_dtype:
+          print(f"[DTYPE MISMATCH] {prim.name}: result dtype {result.dtype} != expected {expected_dtype}")
+          # Fix the dtype to match expected
+          result = result.astype(expected_dtype)
       write(eqn.outvars[0], result)
 
   # Return outputs
@@ -480,6 +494,18 @@ def pallas_call_numpy_interpret(
   print(f"[NumPy Interpreter] Jaxpr outvars: {len(jaxpr.outvars)}")
   print(f"[NumPy Interpreter] Input args: {len(args)}")
   print(f"[NumPy Interpreter] Expected output avals: {len(out_avals)}")
+  print(f"[DEBUG] Output aval dtypes: {[aval.dtype for aval in out_avals]}")
+
+  # Debug: print expected dtypes for invars vs actual args
+  print(f"[DEBUG] Jaxpr invar dtypes vs actual arg dtypes:")
+  for i, invar in enumerate(jaxpr.invars[:len(args)]):
+    arg_dtype = args[i].dtype if hasattr(args[i], 'dtype') else type(args[i])
+    if hasattr(invar.aval, 'inner_aval'):
+      expected = invar.aval.inner_aval.dtype
+      print(f"  {i}: expected {expected} (ref), got {arg_dtype}")
+    elif hasattr(invar.aval, 'dtype'):
+      expected = invar.aval.dtype
+      print(f"  {i}: expected {expected}, got {arg_dtype}")
 
   # Create scratch refs - these are the extra invars beyond the input args
   # The jaxpr expects: [*input_refs, *output_refs, *scratch_refs]
@@ -491,9 +517,21 @@ def pallas_call_numpy_interpret(
 
   # Use io_callback to execute in NumPy
   def numpy_kernel(*jax_args):
-    # Convert JAX arrays to NumPy (these are the input refs)
-    input_refs = [np.asarray(arg) if hasattr(arg, '__array__') else arg
-                  for arg in jax_args]
+    # Convert JAX arrays to NumPy with correct dtypes from jaxpr
+    input_refs = []
+    for i, arg in enumerate(jax_args):
+      if i < num_input_refs:
+        invar = jaxpr.invars[i]
+        if hasattr(invar.aval, 'inner_aval'):
+          # This is a ref - get dtype from inner_aval
+          expected_dtype = invar.aval.inner_aval.dtype
+          print(f"[DEBUG] Input ref {i}: converting to {expected_dtype}")
+          input_refs.append(np.asarray(arg, dtype=expected_dtype))
+        else:
+          print(f"[DEBUG] Input ref {i}: no inner_aval, using arg dtype {np.asarray(arg).dtype}")
+          input_refs.append(np.asarray(arg))
+      else:
+        input_refs.append(np.asarray(arg) if hasattr(arg, '__array__') else arg)
 
     # Create output refs as mutable NumPy arrays
     output_refs = [np.zeros(aval.shape, dtype=aval.dtype) for aval in out_avals]
@@ -517,6 +555,7 @@ def pallas_call_numpy_interpret(
     all_refs = input_refs + output_refs + scratch_refs
 
     print(f"[NumPy Interpreter] Executing with {len(all_refs)} refs (NumPy arrays)")
+    print(f"[DEBUG] Ref dtypes: {[r.dtype if isinstance(r, np.ndarray) else type(r) for r in all_refs]}")
 
     # Get grid
     grid = grid_mapping.grid
