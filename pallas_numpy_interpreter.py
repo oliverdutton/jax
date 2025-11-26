@@ -471,16 +471,7 @@ def _eval_jaxpr_numpy_impl(
     elif prim.name == 'jit':
       # JIT primitive - in interpret mode, just evaluate the jaxpr directly
       jit_jaxpr = eqn.params['jaxpr']
-
-      # CRITICAL FIX: Make copies of refs to prevent unintended mutations
-      protected_vals = []
-      for val in in_vals:
-        if isinstance(val, np.ndarray) and val.flags.writeable:
-          protected_vals.append(val.copy())
-        else:
-          protected_vals.append(val)
-
-      result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *protected_vals, grid_env=grid_env)
+      result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *in_vals, grid_env=grid_env)
       # Don't unwrap - jit primitive uses multiple_results to determine how to handle result
 
     else:
