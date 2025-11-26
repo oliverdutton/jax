@@ -321,7 +321,20 @@ def _eval_jaxpr_numpy_impl(
         if gather_dim == 0 and batch_dim == 1:
           # operand[indices[i,j], j] for all i,j
           batch_idx = np.arange(operand.shape[batch_dim])[None, :]
+
+          DEBUG_GATHER_DETAIL = False
+          if DEBUG_GATHER_DETAIL:
+            print(f"[BATCHED GATHER] gather_dim=0, batch_dim=1")
+            print(f"  operand.shape={operand.shape}")
+            print(f"  indices.shape={indices.shape}, batch_idx.shape={batch_idx.shape}")
+            print(f"  indices[0,:5]={indices[0,:5]}")
+            print(f"  batch_idx[0,:5]={batch_idx[0,:5]}")
+
           result = operand[indices.astype(np.intp), batch_idx]
+
+          if DEBUG_GATHER_DETAIL:
+            print(f"  result.shape={result.shape}")
+            print(f"  result[0,:5]={result[0,:5]}")
         elif gather_dim == 1 and batch_dim == 0:
           # operand[i, indices[i,j]] for all i,j
           batch_idx = np.arange(operand.shape[batch_dim])[:, None]
