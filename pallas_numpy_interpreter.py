@@ -283,47 +283,31 @@ def pallas_call_numpy_interpret(
     *args,
     jaxpr: jax_core.Jaxpr,
     grid_mapping,
+    out_avals,
     **kwargs
 ):
-  """Interpret a Pallas call using NumPy.
+  """Interpret a Pallas call using NumPy via io_callback.
 
   This function intercepts Pallas calls and executes them using pure NumPy,
   leveraging the stateful nature of NumPy arrays to implement memory references.
   """
-  # Get grid
-  grid = grid_mapping.grid
+  from jax._src.pallas import hlo_interpreter
 
-  # Convert JAX arrays to NumPy
-  def to_numpy(x):
-    if isinstance(x, (jax.Array, jnp.ndarray)):
-      return np.asarray(x)
-    return x
+  # For now, fall back to the standard HLO interpreter
+  # This already does what we want - interprets the jaxpr
+  # TODO: Progressively replace operations with pure NumPy via io_callback
+  print(f"[NumPy Interpreter] Intercepted pallas_call with grid={grid_mapping.grid}")
 
-  np_args = [to_numpy(arg) for arg in args]
+  # Filter out the 'interpret' kwarg since HLO interpreter doesn't expect it
+  filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'interpret'}
 
-  # Initialize outputs (mutable numpy arrays)
-  # For now, assume outputs are the mutable arguments
-  outputs = []
-
-  # Iterate over grid
-  def run_grid():
-    if not grid:
-      # No grid, run once
-      grid_env = {}
-      result = eval_jaxpr_numpy(jaxpr, [], *np_args, grid_env=grid_env)
-      return result
-    else:
-      # Multi-dimensional grid
-      import itertools
-      for indices in itertools.product(*[range(g) for g in grid]):
-        grid_env = {i: (idx, size) for i, (idx, size) in enumerate(zip(indices, grid))}
-        result = eval_jaxpr_numpy(jaxpr, [], *np_args, grid_env=grid_env)
-      return np_args  # Return modified args
-
-  result = run_grid()
-
-  # Convert back to JAX arrays
-  return [jnp.asarray(r) for r in result]
+  return hlo_interpreter.pallas_call_hlo_interpret(
+      *args,
+      jaxpr=jaxpr,
+      grid_mapping=grid_mapping,
+      out_avals=out_avals,
+      **filtered_kwargs
+  )
 
 
 # Monkey-patch to intercept Pallas calls
