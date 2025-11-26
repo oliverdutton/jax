@@ -92,7 +92,12 @@ _NUMPY_IMPL = {
     'concatenate': lax_reference.concatenate,
     'reshape': lax_reference.reshape,
     'transpose': np.transpose,
-    'broadcast_in_dim': lax_reference.broadcast_in_dim,
+    'broadcast_in_dim': lambda operand, *, shape, broadcast_dimensions, sharding=None: (
+        lambda op, shp, dims: (
+            print(f"[BROADCAST_IN_DIM] operand.shape={np.array(op).shape}, target_shape={shp}, broadcast_dims={dims}") if False else None,
+            lax_reference.broadcast_in_dim(op, shape=shp, broadcast_dimensions=dims)
+        )[1]
+    )(operand, shape, broadcast_dimensions),
     'squeeze': np.squeeze,
     'slice': lax_reference.slice,
     'dynamic_slice': lax_reference.dynamic_slice,
@@ -127,7 +132,24 @@ def eval_jaxpr_numpy(
     grid_env: Dictionary mapping axis to (index, size) for program_id/num_programs
 
   Returns:
-    List of output values as NumPy arrays
+    List of output values
+  """
+  # Track recursion depth
+  if not hasattr(eval_jaxpr_numpy, '_depth'):
+    eval_jaxpr_numpy._depth = 0
+  eval_jaxpr_numpy._depth += 1
+  try:
+    return _eval_jaxpr_numpy_impl(jaxpr, consts, *args, grid_env=grid_env)
+  finally:
+    eval_jaxpr_numpy._depth -= 1
+
+def _eval_jaxpr_numpy_impl(
+    jaxpr: jax_core.Jaxpr,
+    consts: Sequence[Any],
+    *args: Any,
+    grid_env: dict[int, tuple[int, int]] | None = None,
+) -> list[Any]:
+  """Implementation of eval_jaxpr_numpy. as NumPy arrays
   """
   if grid_env is None:
     grid_env = {}
@@ -154,9 +176,15 @@ def eval_jaxpr_numpy(
     write(v, np.asarray(a))
 
   # Evaluate each equation
-  for eqn in jaxpr.eqns:
+  for eqn_idx, eqn in enumerate(jaxpr.eqns):
     in_vals = [read(v) for v in eqn.invars]
     prim = eqn.primitive
+
+    # Debug: Log equation execution - with depth info
+    DEBUG_EQN = False
+    if DEBUG_EQN and eval_jaxpr_numpy._depth <= 3:  # Show a few levels
+      indent = "  " * (eval_jaxpr_numpy._depth - 1)
+      print(f"{indent}[EQN {eqn_idx} @depth{eval_jaxpr_numpy._depth}] {prim.name}")
 
     # Handle Pallas-specific primitives
     if prim.name == 'program_id':
@@ -184,12 +212,15 @@ def eval_jaxpr_numpy(
         # Apply indexing
         result = ref_val[indexer.indices]
 
-      # Debug: check if we're reading the right dtype
-      if not hasattr(prim, '_get_debug_count'):
-        prim._get_debug_count = 0
-      if prim._get_debug_count < 2 and isinstance(ref_val, np.ndarray):
-        print(f"[DEBUG get] ref dtype: {ref_val.dtype}, result dtype: {result.dtype if isinstance(result, np.ndarray) else type(result)}")
-        prim._get_debug_count += 1
+      # Debug logging
+      DEBUG = True
+      if DEBUG:
+        result_arr = np.array(result)
+        if indexer is not None:
+          print(f"[GET] indexer={indexer.indices if hasattr(indexer, 'indices') else indexer} → shape={result_arr.shape}, values={result_arr.flatten()[:5]}")
+        else:
+          print(f"[GET] FULL → shape={result_arr.shape}, values={result_arr.flatten()[:5]}")
+
 
     elif prim.name == 'swap':
       # Writing to a ref
@@ -197,6 +228,16 @@ def eval_jaxpr_numpy(
       new_val = in_vals[1]
       indexer = eqn.params.get('indexer', None)
       old_val = ref_val.copy() if indexer is None else ref_val[indexer.indices].copy()
+
+      # Debug logging
+      DEBUG = True
+      if DEBUG:
+        old_arr = np.array(old_val)
+        new_arr = np.array(new_val)
+        if indexer is not None:
+          print(f"[SWAP] idx={indexer.indices if hasattr(indexer, 'indices') else indexer}, shape={old_arr.shape}, old={old_arr.flatten()[:5]}, new={new_arr.flatten()[:5]}")
+        else:
+          print(f"[SWAP] FULL, shape={old_arr.shape}, old={old_arr.flatten()[:5]}, new={new_arr.flatten()[:5]}")
 
       if indexer is None:
         # Full update
@@ -256,6 +297,13 @@ def eval_jaxpr_numpy(
       collapsed_slice_dims = tuple(dimension_numbers.collapsed_slice_dims)
       start_index_map = tuple(dimension_numbers.start_index_map)
 
+      DEBUG_GATHER = False
+      if DEBUG_GATHER and eval_jaxpr_numpy._depth >= 2:
+        print(f"[GATHER] operand.shape={operand.shape}, indices.shape={start_indices.shape}")
+        print(f"  operand={operand.flatten()[:10]}")
+        print(f"  indices={start_indices.flatten()[:10]}")
+        print(f"  batch_dims={operand_batching_dims}, collapsed={collapsed_slice_dims}")
+
       # Handle batched gather
       if operand_batching_dims and len(start_index_map) == 1 and len(collapsed_slice_dims) == 1:
         # Batched gather: for each batch element, gather from the specified dimension
@@ -268,27 +316,12 @@ def eval_jaxpr_numpy(
         # Squeeze trailing dimension from indices
         indices = start_indices.squeeze(-1) if start_indices.shape[-1] == 1 else start_indices
 
-        # Debug first gather
-        import sys
-        if not hasattr(sys, '_gather_debug_count'):
-          sys._gather_debug_count = 0
-        if sys._gather_debug_count == 0:
-          print(f"[DEBUG gather] operand.shape={operand.shape}, operand.dtype={operand.dtype}")
-          print(f"[DEBUG gather] indices.shape={indices.shape}, indices.dtype={indices.dtype}")
-          print(f"[DEBUG gather] batch_dim={batch_dim}, gather_dim={gather_dim}")
-          print(f"[DEBUG gather] sample operand[0,:5]={operand[0,:5]}")
-          print(f"[DEBUG gather] sample indices[0,:5]={indices[0,:5]}")
-          sys._gather_debug_count += 1
-
         # Build advanced indexing arrays
         # For operand[indices, batch_idx] where we gather from gather_dim and keep batch_dim
         if gather_dim == 0 and batch_dim == 1:
           # operand[indices[i,j], j] for all i,j
           batch_idx = np.arange(operand.shape[batch_dim])[None, :]
           result = operand[indices.astype(np.intp), batch_idx]
-          if sys._gather_debug_count == 1:
-            print(f"[DEBUG gather] result.shape={result.shape}, result[0,:5]={result[0,:5]}")
-            sys._gather_debug_count += 1
         elif gather_dim == 1 and batch_dim == 0:
           # operand[i, indices[i,j]] for all i,j
           batch_idx = np.arange(operand.shape[batch_dim])[:, None]
@@ -302,6 +335,9 @@ def eval_jaxpr_numpy(
         result = np.take_along_axis(operand, indices.astype(np.intp), axis=axis)
       else:
         raise NotImplementedError(f"Complex gather pattern not yet supported: dimension_numbers={dimension_numbers}")
+
+      if DEBUG_GATHER and eval_jaxpr_numpy._depth >= 2:
+        print(f"  result={result.flatten()[:10]}")
 
     # Handle standard JAX primitives
     elif prim.name in _NUMPY_IMPL:
@@ -327,7 +363,29 @@ def eval_jaxpr_numpy(
         params = {}  # Don't pass params again
 
       if params or prim.name != 'concatenate':
+        # Log operation for debugging - only key operations
+        DEBUG_OPS = {'get', 'swap', 'select_n', 'gather', 'transpose', 'slice', 'concatenate'}  # Focus on these
+        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2:
+          print(f"[{eqn_idx:3d}] {prim.name:20s}", end=' ')
+          for i, val in enumerate(in_vals):
+            arr = np.array(val)
+            if arr.size <= 5:
+              print(f"in{i}={arr.flatten()} ", end='')
+            else:
+              print(f"in{i}=[{arr.flatten()[0]:.2f}...] ", end='')
+          if params:
+            print(f"params={params} ", end='')
+
         result = impl(*in_vals, **params)
+
+        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2:
+          arr = np.array(result) if hasattr(result, '__array__') or isinstance(result, np.ndarray) else result
+          if isinstance(arr, np.ndarray) and arr.size <= 5:
+            print(f"→ {arr.flatten()}")
+          elif isinstance(arr, np.ndarray):
+            print(f"→ [{arr.flatten()[0]:.2f}...]")
+          else:
+            print(f"→ {arr}")
 
     # Handle higher-order primitives
     elif prim.name == 'cond':
@@ -364,9 +422,25 @@ def eval_jaxpr_numpy(
       num_carry = eqn.params['num_carry']
       length = eqn.params['length']
 
+      DEBUG_SCAN_DETAIL = False
+      if DEBUG_SCAN_DETAIL and eval_jaxpr_numpy._depth == 1:
+        print(f"[SCAN] num_consts={num_consts}, num_carry={num_carry}, length={length}")
+        print(f"[SCAN] in_vals: {len(in_vals)} values")
+        # Check which invars correspond to input vs output refs
+        print(f"[SCAN] jaxpr invars: {len(scan_jaxpr.jaxpr.invars)}")
+        for i, (val, invar) in enumerate(zip(in_vals[:num_consts], scan_jaxpr.jaxpr.invars[:num_consts])):
+          arr = np.array(val)
+          if isinstance(arr, np.ndarray):
+            is_writable = arr.flags.writeable if hasattr(arr, 'flags') else 'N/A'
+            is_ref = hasattr(invar.aval, 'inner_aval')
+            print(f"  const[{i}]: shape={arr.shape}, dtype={arr.dtype}, writable={is_writable}, is_ref={is_ref}, values={arr.flatten()[:5]}")
+
       consts = in_vals[:num_consts]
       init_carry = in_vals[num_consts:num_consts + num_carry]
       xs = in_vals[num_consts + num_carry:]
+
+      # Note: Disabling read-only protection for now
+      # The real bug is in the computation producing wrong results
 
       carry = init_carry
       ys = []
@@ -386,10 +460,27 @@ def eval_jaxpr_numpy(
       else:
         result = carry
 
+      # Debug scan result
+      DEBUG_SCAN = False
+      if DEBUG_SCAN:
+        for i, r in enumerate(result if isinstance(result, (list, tuple)) else [result]):
+          arr = np.array(r)
+          if arr.size > 0:
+            print(f"[SCAN RESULT {i}] shape={arr.shape}, dtype={arr.dtype}, values={arr.flatten()[:5]}")
+
     elif prim.name == 'jit':
       # JIT primitive - in interpret mode, just evaluate the jaxpr directly
       jit_jaxpr = eqn.params['jaxpr']
-      result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *in_vals, grid_env=grid_env)
+
+      # CRITICAL FIX: Make copies of refs to prevent unintended mutations
+      protected_vals = []
+      for val in in_vals:
+        if isinstance(val, np.ndarray) and val.flags.writeable:
+          protected_vals.append(val.copy())
+        else:
+          protected_vals.append(val)
+
+      result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *protected_vals, grid_env=grid_env)
       # Don't unwrap - jit primitive uses multiple_results to determine how to handle result
 
     else:
@@ -402,13 +493,14 @@ def eval_jaxpr_numpy(
       for v, r in zip(eqn.outvars, result):
         write(v, r)
     else:
-      # Debug dtype tracking
+      # Check dtype matching but only auto-fix for non-refs
       if isinstance(result, np.ndarray) and hasattr(eqn.outvars[0].aval, 'dtype'):
         expected_dtype = eqn.outvars[0].aval.dtype
         if result.dtype != expected_dtype:
-          print(f"[DTYPE MISMATCH] {prim.name}: result dtype {result.dtype} != expected {expected_dtype}")
-          # Fix the dtype to match expected
-          result = result.astype(expected_dtype)
+          # Only auto-convert if this is NOT a ref (refs must maintain identity for mutations)
+          is_ref = hasattr(eqn.outvars[0].aval, 'inner_aval')
+          if not is_ref:
+            result = result.astype(expected_dtype)
       write(eqn.outvars[0], result)
 
   # Return outputs
@@ -494,18 +586,6 @@ def pallas_call_numpy_interpret(
   print(f"[NumPy Interpreter] Jaxpr outvars: {len(jaxpr.outvars)}")
   print(f"[NumPy Interpreter] Input args: {len(args)}")
   print(f"[NumPy Interpreter] Expected output avals: {len(out_avals)}")
-  print(f"[DEBUG] Output aval dtypes: {[aval.dtype for aval in out_avals]}")
-
-  # Debug: print expected dtypes for invars vs actual args
-  print(f"[DEBUG] Jaxpr invar dtypes vs actual arg dtypes:")
-  for i, invar in enumerate(jaxpr.invars[:len(args)]):
-    arg_dtype = args[i].dtype if hasattr(args[i], 'dtype') else type(args[i])
-    if hasattr(invar.aval, 'inner_aval'):
-      expected = invar.aval.inner_aval.dtype
-      print(f"  {i}: expected {expected} (ref), got {arg_dtype}")
-    elif hasattr(invar.aval, 'dtype'):
-      expected = invar.aval.dtype
-      print(f"  {i}: expected {expected}, got {arg_dtype}")
 
   # Create scratch refs - these are the extra invars beyond the input args
   # The jaxpr expects: [*input_refs, *output_refs, *scratch_refs]
@@ -525,10 +605,8 @@ def pallas_call_numpy_interpret(
         if hasattr(invar.aval, 'inner_aval'):
           # This is a ref - get dtype from inner_aval
           expected_dtype = invar.aval.inner_aval.dtype
-          print(f"[DEBUG] Input ref {i}: converting to {expected_dtype}")
           input_refs.append(np.asarray(arg, dtype=expected_dtype))
         else:
-          print(f"[DEBUG] Input ref {i}: no inner_aval, using arg dtype {np.asarray(arg).dtype}")
           input_refs.append(np.asarray(arg))
       else:
         input_refs.append(np.asarray(arg) if hasattr(arg, '__array__') else arg)
@@ -557,6 +635,14 @@ def pallas_call_numpy_interpret(
     print(f"[NumPy Interpreter] Executing with {len(all_refs)} refs (NumPy arrays)")
     print(f"[DEBUG] Ref dtypes: {[r.dtype if isinstance(r, np.ndarray) else type(r) for r in all_refs]}")
 
+    # Debug: Check initial values
+    DEBUG = False
+    if DEBUG:
+      print(f"[NumPy Interpreter] Initial refs:")
+      for i, ref in enumerate(all_refs[:2]):  # Just check first 2 refs
+        arr = np.array(ref)
+        print(f"  ref[{i}]: shape={arr.shape}, dtype={arr.dtype}, values={arr.flatten()[:10]}")
+
     # Get grid
     grid = grid_mapping.grid
 
@@ -571,6 +657,14 @@ def pallas_call_numpy_interpret(
       for indices in itertools.product(*[range(g) for g in grid]):
         grid_env = {i: (idx, size) for i, (idx, size) in enumerate(zip(indices, grid))}
         eval_jaxpr_numpy(jaxpr, [], *all_refs, grid_env=grid_env)
+
+    # Debug: Check what the output refs contain
+    DEBUG = False
+    if DEBUG:
+      print(f"[NumPy Interpreter] Final output refs:")
+      for i, ref in enumerate(output_refs):
+        arr = np.array(ref)
+        print(f"  output_ref[{i}]: shape={arr.shape}, dtype={arr.dtype}, values={arr.flatten()[:10]}")
 
     # Return the output refs (which have been modified in place)
     return output_refs
