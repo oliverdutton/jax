@@ -445,6 +445,8 @@ def pallas_call_hlo_interpret(
     print(f"Discharged jaxpr primitives:")
     for i, eqn in enumerate(discharged_jaxpr.eqns):
       print(f"  Eqn {i}: {eqn.primitive.name}")
+      if eqn.primitive.name == 'scan' and 'length' in eqn.params:
+        print(f"    Scan length: {eqn.params['length']}")
   out = _initialize_output_vals(grid_mapping.block_mappings_output,
                                 args, input_output_aliases)
   # TODO(b/370563936): Fix correctness issue w/ io aliasing
@@ -499,16 +501,18 @@ def pallas_call_hlo_interpret(
   num_inout_blocks = len(block_args) + len(out)
   grid_start_indices = (jnp.int32(0),) * len(grid)
   if grid:
-    num_iterations = reduce(jnp.multiply, grid)  # type: ignore[arg-type]
+    # Use Python multiply for concrete iteration count (for Python loops)
+    num_iterations = reduce(lambda x, y: x * y, grid, 1)
   else:
     # Base case is always one iteration when grid is ()
     num_iterations = 1
 
-  # Fast path: for single-iteration grids, skip the while_loop entirely
-  # This dramatically reduces compilation time for simple cases
-  is_single_iteration = (not grid or all(d == 1 for d in grid))
+  # Fast path: for small grids, unroll loop to avoid loop primitive overhead
+  # This can significantly reduce compilation time
+  # Unroll for up to 16 iterations to balance compilation time vs code size
+  is_small_grid = (not grid or num_iterations <= 16)
 
-  if is_single_iteration:
+  if is_small_grid and num_iterations == 1:
     # Direct evaluation without loop overhead
     # For single iteration, start_indices are all zeros, so we can skip slicing
     loop_idx = grid_start_indices
@@ -564,16 +568,63 @@ def pallas_call_hlo_interpret(
         out_block = lax.broadcast_in_dim(out_block, block_shape, broadcast_dims)
       carry.append(out_block)
     carry = carry + list(out_scratch)
+  elif is_small_grid and num_iterations > 1:
+    # Unroll loop for small grids (2-16 iterations) to avoid loop compilation overhead
+    loop_idx = grid_start_indices
+    carry_blocks = carry
+
+    for iteration in range(num_iterations):
+      if grid_mapping.local_grid_env is not None:
+        local_grid_env = grid_mapping.local_grid_env(loop_idx, grid)
+      else:
+        local_grid_env = tuple(
+            pallas_core.GridAxis(idx, b)
+            for dim, (idx, b) in enumerate(zip(loop_idx, grid))
+            if dim not in grid_mapping.vmapped_dims
+        )
+
+      carry_consts_ins, scratch = split_list(carry_blocks, [num_inout_blocks])
+      with pallas_core.grid_env(local_grid_env):
+        for s in scalars:
+          if isinstance(s.dtype, jax_core.bint):
+            aval = jax_core.get_aval(s)
+            s.aval = aval.update(dtype=jnp.int32)
+        start_indices = [
+            bm.compute_start_indices_interpret(loop_idx, *scalars)
+            for bm in grid_mapping.block_mappings
+        ]
+      # Use optimized versions with precomputed dimensions
+      blocks = map(_dynamic_slice_precomputed, start_indices, block_shapes,
+                   carry_consts_ins, squeeze_dims_list)
+      with pallas_core.grid_env(local_grid_env):
+        assert len(discharged_jaxpr.invars) == len(scalars) + len(blocks) + len(
+            scratch_values
+        ), (
+            len(discharged_jaxpr.invars),
+            len(scalars),
+            len(blocks),
+            len(scratch_values),
+        )
+
+        blocks = jax_core.eval_jaxpr(
+            discharged_jaxpr, discharged_consts, *scalars, *blocks, *scratch
+        )
+
+      _, out_inout, out_scratch = split_list(
+          blocks, [grid_mapping.num_index_operands, num_inout_blocks])
+      # Use optimized version with precomputed dimensions
+      out_carry = map(_dynamic_update_slice_precomputed, start_indices, block_shapes,
+                      carry_consts_ins, out_inout, broadcast_dims_list)
+
+      # Update for next iteration
+      loop_idx = _get_next_indices(grid, loop_idx)
+      carry_blocks = list(out_carry) + list(out_scratch)
+
+    carry = carry_blocks
   else:
-    # Original while_loop path for multi-iteration grids
-    # The scan carry: (i, loop_idx, *consts, *ins, *outs, *scratch)
-    # i:int32 is the iteration index
-    # loop_idx: tuple[int32] are the program ids for each grid axis
-    def cond(carry):
-      i, *_ = carry
-      return i < num_iterations
-    def body(carry):
-      i, loop_idx, *carry_blocks = carry
+    # Use fori_loop for potentially better compilation than while_loop
+    def body(i, carry_state):
+      loop_idx, carry_blocks = carry_state
 
       if grid_mapping.local_grid_env is not None:
         local_grid_env = grid_mapping.local_grid_env(loop_idx, grid)
@@ -616,12 +667,15 @@ def pallas_call_hlo_interpret(
       # Use optimized version with precomputed dimensions
       out_carry = map(_dynamic_update_slice_precomputed, start_indices, block_shapes,
                       carry_consts_ins, out_inout, broadcast_dims_list)
-      return (i + 1, _get_next_indices(grid, loop_idx),
-              *out_carry, *out_scratch)
 
-    (_, _, *carry) = loops.while_loop(
-        cond, body, (jnp.int32(0), grid_start_indices, *carry)
-    )
+      # Update loop variables
+      next_loop_idx = _get_next_indices(grid, loop_idx)
+      next_carry_blocks = list(out_carry) + list(out_scratch)
+
+      return (next_loop_idx, next_carry_blocks)
+
+    _, carry_blocks = lax.fori_loop(0, num_iterations, body, (grid_start_indices, carry))
+    carry = carry_blocks
 
   out_out = carry[len(block_args):len(block_args) + len(out)]
   out_nopad = []
