@@ -1248,7 +1248,8 @@ def _interpret_jaxpr(
     device_id,
     local_core_id,
     compiler_params,
-    interpret_params
+    interpret_params,
+    use_numpy=False,
 ):
   env = {}
 
@@ -1280,6 +1281,7 @@ def _interpret_jaxpr(
       local_core_id=local_core_id,
       compiler_params=compiler_params,
       interpret_params=interpret_params,
+      use_numpy=use_numpy,
   )
   for eqn in jaxpr.eqns:
     with source_info_util.user_context(
@@ -1617,7 +1619,30 @@ def _interpret_jaxpr(
         raise NotImplementedError('atomic_cas_p')
 
       else:
-        if interpret_params.skip_floating_point_ops and all(
+        if use_numpy:
+          # Use NumPy for evaluation
+          in_vals = deferred_invals()
+
+          # More comprehensive list of primitives to handle in NumPy
+          numpy_ops = {
+              "add": np.add, "sub": np.subtract, "mul": np.multiply,
+              "div": np.divide, "le": np.less_equal, "lt": np.less,
+              "gt": np.greater, "ge": np.greater_equal, "eq": np.equal,
+              "neg": np.negative, "abs": np.absolute, "sign": np.sign,
+              "floor": np.floor, "ceil": np.ceil, "round": np.round,
+              "sin": np.sin, "cos": np.cos, "exp": np.exp, "log": np.log,
+              "sqrt": np.sqrt, "and": np.bitwise_and, "or": np.bitwise_or,
+              "xor": np.bitwise_xor, "not": np.bitwise_not,
+          }
+
+          if prim.name in numpy_ops:
+            op = numpy_ops[prim.name]
+            out = op(*[np.asarray(v) for v in in_vals])
+          else:
+            # Fallback to JAX for other primitives
+            subfuns, bind_params = prim.get_bind_params(eqn.params)
+            out = prim.bind(*subfuns, *in_vals, **bind_params)
+        elif interpret_params.skip_floating_point_ops and all(
             _is_float(ovar.aval.dtype) for ovar in eqn.outvars
         ):
           # Skip `prim.bind` since `prim` only produces floating-point values.
@@ -1954,6 +1979,7 @@ def interpret_pallas_call(
     metadata: frozen_dict.FrozenDict[str, str] | None,
     name: str | None,
 ):
+  print("Jax version updated")
   del debug, cost_estimate, out_avals, name
   del metadata  # TODO(sharadmv): Add metadata to HLO.
 
@@ -2266,6 +2292,7 @@ def interpret_pallas_call(
                 local_core_id=core_index,
                 compiler_params=compiler_params,
                 interpret_params=interpret_params,
+                use_numpy=True,
             )
             for bm in grid_mapping.block_mappings
         ])
@@ -2346,6 +2373,7 @@ def interpret_pallas_call(
             local_core_id=core_index,
             compiler_params=compiler_params,
             interpret_params=interpret_params,
+            use_numpy=True,
         )
 
         # Copy from the kernel buffers to slices of the output in HBM.
@@ -2448,6 +2476,7 @@ def interpret_pallas_call(
               local_core_id=core_index,
               compiler_params=compiler_params,
               interpret_params=interpret_params,
+              use_numpy=True,
           )
           for bm in grid_mapping.block_mappings
       ])
