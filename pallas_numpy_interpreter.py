@@ -349,10 +349,14 @@ def _eval_jaxpr_numpy_impl(
             print(f"  indices.shape={indices.shape}, batch_idx.shape={batch_idx.shape}")
             print(f"  indices[0,:5]={indices[0,:5]}")
             print(f"  batch_idx[0,:5]={batch_idx[0,:5]}")
+            print(f"  indices[:,0] = {indices[:,0]}")  # All indices for column 0
             operand_int32 = operand.view(np.int32) if operand.dtype == np.float32 else operand
             print(f"  operand[0,:5]={operand_int32[0,:5]}")
             print(f"  operand[1,:5]={operand_int32[1,:5]}")
             print(f"  operand[2,:5]={operand_int32[2,:5]}")
+            print(f"  operand[3,:5]={operand_int32[3,:5]}")
+            # Show which rows have which values at column 0
+            print(f"  operand[:,0] = {operand_int32[:,0]}")  # All values at column 0
 
           result = operand[indices.astype(np.intp), batch_idx]
 
