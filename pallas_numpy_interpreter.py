@@ -181,8 +181,8 @@ def _eval_jaxpr_numpy_impl(
     prim = eqn.primitive
 
     # Debug: Log equation execution - with depth info
-    DEBUG_EQN = True
-    if DEBUG_EQN and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1330 and eqn_idx <= 1345:
+    DEBUG_EQN = False  # Disable for now
+    if DEBUG_EQN and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1200 and eqn_idx <= 1340:
       indent = "  " * (eval_jaxpr_numpy._depth - 1)
       print(f"{indent}[EQN {eqn_idx} @depth{eval_jaxpr_numpy._depth}] {prim.name}")
 
@@ -504,16 +504,17 @@ def _eval_jaxpr_numpy_impl(
       jit_jaxpr = eqn.params['jaxpr']
 
       DEBUG_JIT = True
-      if DEBUG_JIT and eval_jaxpr_numpy._depth == 2 and eqn_idx == 1336:
-        print(f"\n[JIT 1336] Inputs:")
+      jit_indices = [1186, 1196, 1206, 1216, 1226, 1236, 1246, 1256, 1266, 1276, 1286, 1296, 1306, 1316, 1326, 1336]
+      if DEBUG_JIT and eval_jaxpr_numpy._depth == 2 and eqn_idx in jit_indices:
+        print(f"\n[JIT {eqn_idx}] Inputs:")
         for i, inv in enumerate(in_vals[:5]):
           if isinstance(inv, np.ndarray):
             print(f"  in[{i}]: shape={inv.shape}, unique={len(np.unique(inv.flatten()[:20]))}, sample={inv.flatten()[:5]}")
 
       result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *in_vals, grid_env=grid_env)
 
-      if DEBUG_JIT and eval_jaxpr_numpy._depth == 2 and eqn_idx == 1336:
-        print(f"[JIT 1336] Result:")
+      if DEBUG_JIT and eval_jaxpr_numpy._depth == 2 and eqn_idx in jit_indices:
+        print(f"[JIT {eqn_idx}] Result:")
         if isinstance(result, (list, tuple)):
           for i, r in enumerate(result[:5]):
             if isinstance(r, np.ndarray):
