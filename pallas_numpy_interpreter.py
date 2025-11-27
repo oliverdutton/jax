@@ -160,20 +160,36 @@ def _eval_jaxpr_numpy_impl(
     return env[v]
 
   def write(v: jax_core.Var, val: Any) -> None:
-    # Ensure refs are writable (not read-only views)
-    if hasattr(v.aval, 'inner_aval') and isinstance(val, np.ndarray):
-      # This is a ref - ensure it's writable
-      if not val.flags.writeable:
-        val = val.copy()
+    # CRITICAL: JAX arrays should be immutable copies, refs should be mutable references
+    if isinstance(val, np.ndarray):
+      if hasattr(v.aval, 'inner_aval'):
+        # This is a ref - ensure it's writable but keep as reference
+        if not val.flags.writeable:
+          val = val.copy()
+      else:
+        # This is a JAX array - always store as independent copy to prevent aliasing
+        val = np.array(val, copy=True)
     env[v] = val
 
   env: dict[jax_core.Var, Any] = {}
 
   # Initialize environment with consts and args
+  # CRITICAL: JAX arrays should be copies, refs should be references
   for v, c in zip(jaxpr.constvars, consts):
-    write(v, np.asarray(c))
+    if hasattr(v.aval, 'inner_aval'):
+      # This is a ref - keep as reference
+      write(v, np.asarray(c))
+    else:
+      # This is a JAX array - make a copy
+      write(v, np.array(c, copy=True))
+
   for v, a in zip(jaxpr.invars, args):
-    write(v, np.asarray(a))
+    if hasattr(v.aval, 'inner_aval'):
+      # This is a ref - keep as reference
+      write(v, np.asarray(a))
+    else:
+      # This is a JAX array - make a copy
+      write(v, np.array(a, copy=True))
 
   # Evaluate each equation
   for eqn_idx, eqn in enumerate(jaxpr.eqns):
@@ -204,13 +220,16 @@ def _eval_jaxpr_numpy_impl(
     # Handle state primitives (refs)
     elif prim.name == 'get':
       # Reading from a ref
+      # CRITICAL: GET reads from a ref (mutable) and returns a JAX array (immutable)
+      # JAX arrays should be independent copies, not views/references!
       ref_val = in_vals[0]
       indexer = eqn.params.get('indexer', None)
       if indexer is None:
-        result = ref_val
+        # Return a copy of the entire ref
+        result = np.array(ref_val, copy=True)
       else:
-        # Apply indexing
-        result = ref_val[indexer.indices]
+        # Apply indexing and return a copy (not a view)
+        result = np.array(ref_val[indexer.indices], copy=True)
 
       # Debug logging
       DEBUG = False
@@ -224,9 +243,13 @@ def _eval_jaxpr_numpy_impl(
 
     elif prim.name == 'swap':
       # Writing to a ref
+      # CRITICAL: SWAP takes a ref (mutable) and a JAX array (immutable)
+      # The JAX array should be copied into the ref
       ref_val = in_vals[0]
       new_val = in_vals[1]
       indexer = eqn.params.get('indexer', None)
+
+      # Save old value as a copy (this becomes a JAX array returned to user)
       old_val = ref_val.copy() if indexer is None else ref_val[indexer.indices].copy()
 
       # Debug logging
@@ -239,12 +262,13 @@ def _eval_jaxpr_numpy_impl(
         else:
           print(f"[SWAP] FULL, shape={old_arr.shape}, old={old_arr.flatten()[:5]}, new={new_arr.flatten()[:5]}")
 
+      # Write new value to ref (NumPy's assignment already copies, but be explicit)
       if indexer is None:
         # Full update
-        ref_val[:] = new_val
+        np.copyto(ref_val, new_val)
       else:
         # Partial update
-        ref_val[indexer.indices] = new_val
+        np.copyto(ref_val[indexer.indices], new_val)
 
       result = old_val
 
@@ -458,6 +482,11 @@ def _eval_jaxpr_numpy_impl(
             print(f"\n  params={params} ", end='')
 
         result = impl(*in_vals, **params)
+
+        # CRITICAL: Ensure result is a copy, not a view
+        # lax_reference operations may return views that alias with inputs
+        if isinstance(result, np.ndarray):
+          result = np.array(result, copy=True)
 
         if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1320 and eqn_idx <= 1345:
           arr = np.array(result) if hasattr(result, '__array__') or isinstance(result, np.ndarray) else result
@@ -694,7 +723,17 @@ def _eval_jaxpr_numpy_impl(
                   print(f"     in[{i}]: shape={inv.shape}, unique={inv_unique}, sample={inv_sample}")
 
   # Return outputs
-  return [read(v) for v in jaxpr.outvars]
+  # CRITICAL: Return copies, not references
+  outputs = []
+  for v in jaxpr.outvars:
+    val = read(v)
+    if isinstance(val, np.ndarray) and not hasattr(v.aval, 'inner_aval'):
+      # This is a JAX array (not a ref) - return a copy
+      outputs.append(np.array(val, copy=True))
+    else:
+      # This is a ref or non-array - return as-is
+      outputs.append(val)
+  return outputs
 
 
 def pallas_call_numpy_interpret(
