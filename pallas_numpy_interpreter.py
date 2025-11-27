@@ -322,7 +322,18 @@ def _eval_jaxpr_numpy_impl(
         print(f"[GATHER] operand.shape={operand.shape}, indices.shape={start_indices.shape}")
         print(f"  operand={operand.flatten()[:10]}")
         print(f"  indices={start_indices.flatten()[:10]}")
-        print(f"  batch_dims={operand_batching_dims}, collapsed={collapsed_slice_dims}")
+        print(f"  slice_sizes={slice_sizes}")
+        print(f"  operand_batching_dims={operand_batching_dims}")
+        print(f"  start_indices_batching_dims={start_indices_batching_dims}")
+        print(f"  collapsed_slice_dims={collapsed_slice_dims}")
+        print(f"  start_index_map={start_index_map}")
+
+      # DEBUG: Try using fallback (non-batched) gather to see if it works correctly
+      USE_FALLBACK_GATHER = True
+      if USE_FALLBACK_GATHER and eval_jaxpr_numpy._depth == 3:
+        # Temporarily skip batched path to use fallback
+        saved_operand_batching_dims = operand_batching_dims
+        operand_batching_dims = ()  # Disable batched path
 
       # Handle batched gather
       if operand_batching_dims and len(start_index_map) == 1 and len(collapsed_slice_dims) == 1:
@@ -377,7 +388,13 @@ def _eval_jaxpr_numpy_impl(
         # Simple non-batched gather
         axis = start_index_map[0]
         indices = start_indices.squeeze(-1) if start_indices.shape[-1] == 1 else start_indices
+        if DEBUG_GATHER and eval_jaxpr_numpy._depth == 3:
+          print(f"[FALLBACK GATHER] axis={axis}, indices.shape={indices.shape}")
+          print(f"  indices[:,0] = {indices[:,0]}")
         result = np.take_along_axis(operand, indices.astype(np.intp), axis=axis)
+        if DEBUG_GATHER and eval_jaxpr_numpy._depth == 3 and result.size >= 128:
+          result_int32 = result.view(np.int32) if result.dtype == np.float32 else result
+          print(f"  result unique values (fallback): {np.unique(result_int32.flatten())[:6]}")
       else:
         raise NotImplementedError(f"Complex gather pattern not yet supported: dimension_numbers={dimension_numbers}")
 
