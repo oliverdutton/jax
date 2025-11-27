@@ -181,8 +181,8 @@ def _eval_jaxpr_numpy_impl(
     prim = eqn.primitive
 
     # Debug: Log equation execution - with depth info
-    DEBUG_EQN = False
-    if DEBUG_EQN and eval_jaxpr_numpy._depth <= 3:  # Show a few levels
+    DEBUG_EQN = True
+    if DEBUG_EQN and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1330 and eqn_idx <= 1345:
       indent = "  " * (eval_jaxpr_numpy._depth - 1)
       print(f"{indent}[EQN {eqn_idx} @depth{eval_jaxpr_numpy._depth}] {prim.name}")
 
@@ -372,33 +372,51 @@ def _eval_jaxpr_numpy_impl(
       elif prim.name == 'concatenate':
         # concatenate takes (operands, dimension) as positional args
         dimension = params.get('dimension', 0)
+
+        # Log concatenate operation
+        DEBUG_OPS = {'transpose', 'slice', 'concatenate', 'gather'}
+        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1320 and eqn_idx <= 1345:
+          print(f"\n[{eqn_idx:3d}] concatenate  dimension={dimension}")
+          print(f"  in_vals is list with {len(in_vals)} arrays:")
+          for i, val in enumerate(in_vals):
+            arr = np.array(val)
+            if arr.size > 0:
+              unique = len(np.unique(arr.flatten()[:20]))
+              print(f"    [{i}]: shape={arr.shape}, unique={unique}, sample={arr.flatten()[:5]}")
+
         result = impl(in_vals, dimension)
+
+        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1320 and eqn_idx <= 1345:
+          arr = np.array(result)
+          unique = len(np.unique(arr.flatten()[:20]))
+          print(f"  → shape={arr.shape}, unique={unique}, sample={arr.flatten()[:5]}")
+
         params = {}  # Don't pass params again
 
       if params or prim.name != 'concatenate':
         # Log operation for debugging - only key operations
-        DEBUG_OPS = {'get', 'swap', 'select_n', 'gather', 'transpose', 'slice', 'concatenate'}  # Focus on these
-        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2:
-          print(f"[{eqn_idx:3d}] {prim.name:20s}", end=' ')
+        DEBUG_OPS = {'transpose', 'slice', 'concatenate', 'gather'}  # Focus on these
+        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1320 and eqn_idx <= 1345:
+          print(f"\n[{eqn_idx:3d}] {prim.name:20s}", end=' ')
           for i, val in enumerate(in_vals):
             arr = np.array(val)
-            if arr.size <= 5:
-              print(f"in{i}={arr.flatten()} ", end='')
+            if arr.size <= 10:
+              print(f"\n  in{i}={arr.flatten()} ", end='')
             else:
-              print(f"in{i}=[{arr.flatten()[0]:.2f}...] ", end='')
+              unique = len(np.unique(arr.flatten()[:20]))
+              print(f"\n  in{i}: shape={arr.shape}, unique={unique}, sample={arr.flatten()[:5]} ", end='')
           if params:
-            print(f"params={params} ", end='')
+            print(f"\n  params={params} ", end='')
 
         result = impl(*in_vals, **params)
 
-        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2:
+        if prim.name in DEBUG_OPS and eval_jaxpr_numpy._depth == 2 and eqn_idx >= 1320 and eqn_idx <= 1345:
           arr = np.array(result) if hasattr(result, '__array__') or isinstance(result, np.ndarray) else result
-          if isinstance(arr, np.ndarray) and arr.size <= 5:
-            print(f"→ {arr.flatten()}")
-          elif isinstance(arr, np.ndarray):
-            print(f"→ [{arr.flatten()[0]:.2f}...]")
+          if isinstance(arr, np.ndarray):
+            unique = len(np.unique(arr.flatten()[:20]))
+            print(f"\n  → shape={arr.shape}, unique={unique}, sample={arr.flatten()[:5]}")
           else:
-            print(f"→ {arr}")
+            print(f"\n  → {arr}")
 
     # Handle higher-order primitives
     elif prim.name == 'cond':
@@ -484,11 +502,54 @@ def _eval_jaxpr_numpy_impl(
     elif prim.name == 'jit':
       # JIT primitive - in interpret mode, just evaluate the jaxpr directly
       jit_jaxpr = eqn.params['jaxpr']
+
+      DEBUG_JIT = True
+      if DEBUG_JIT and eval_jaxpr_numpy._depth == 2 and eqn_idx == 1336:
+        print(f"\n[JIT 1336] Inputs:")
+        for i, inv in enumerate(in_vals[:5]):
+          if isinstance(inv, np.ndarray):
+            print(f"  in[{i}]: shape={inv.shape}, unique={len(np.unique(inv.flatten()[:20]))}, sample={inv.flatten()[:5]}")
+
       result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *in_vals, grid_env=grid_env)
+
+      if DEBUG_JIT and eval_jaxpr_numpy._depth == 2 and eqn_idx == 1336:
+        print(f"[JIT 1336] Result:")
+        if isinstance(result, (list, tuple)):
+          for i, r in enumerate(result[:5]):
+            if isinstance(r, np.ndarray):
+              print(f"  out[{i}]: shape={r.shape}, unique={len(np.unique(r.flatten()[:20]))}, sample={r.flatten()[:5]}")
+        elif isinstance(result, np.ndarray):
+          print(f"  result: shape={result.shape}, unique={len(np.unique(result.flatten()[:20]))}, sample={result.flatten()[:5]}")
+
       # Don't unwrap - jit primitive uses multiple_results to determine how to handle result
 
     else:
       raise NotImplementedError(f"Primitive {prim.name} not implemented in NumPy interpreter")
+
+    # Debug: Check for suspicious results (constant arrays from varied inputs)
+    DEBUG_SUSPICIOUS = True
+    if DEBUG_SUSPICIOUS and isinstance(result, np.ndarray) and result.size > 10:
+        # Check if result is suspiciously constant
+        if result.size >= 128:  # Only check large arrays
+            unique_vals = len(np.unique(result.flatten()[:100]))
+            if unique_vals == 1:
+                # Check if inputs were varied
+                input_varied = False
+                for inv in in_vals:
+                    if isinstance(inv, np.ndarray) and inv.size > 10:
+                        inv_unique = len(np.unique(inv.flatten()[:100]))
+                        if inv_unique > 1:
+                            input_varied = True
+                            break
+
+                if input_varied:
+                    print(f"\n⚠️  SUSPICIOUS: {prim.name} @ depth {eval_jaxpr_numpy._depth}")
+                    print(f"   Varied input → Constant output (all {result.flatten()[0]})")
+                    print(f"   Result shape: {result.shape}")
+                    for i, inv in enumerate(in_vals[:3]):  # Show first 3 inputs
+                        if isinstance(inv, np.ndarray) and inv.size > 0:
+                            inv_arr = np.array(inv)
+                            print(f"   in[{i}]: shape={inv_arr.shape}, unique={len(np.unique(inv_arr.flatten()[:20]))}, sample={inv_arr.flatten()[:5]}")
 
     # Write results
     if prim.multiple_results:
