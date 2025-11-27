@@ -213,7 +213,7 @@ def _eval_jaxpr_numpy_impl(
         result = ref_val[indexer.indices]
 
       # Debug logging
-      DEBUG = True
+      DEBUG = False
       if DEBUG:
         result_arr = np.array(result)
         if indexer is not None:
@@ -230,7 +230,7 @@ def _eval_jaxpr_numpy_impl(
       old_val = ref_val.copy() if indexer is None else ref_val[indexer.indices].copy()
 
       # Debug logging
-      DEBUG = True
+      DEBUG = False
       if DEBUG:
         old_arr = np.array(old_val)
         new_arr = np.array(new_val)
@@ -268,9 +268,29 @@ def _eval_jaxpr_numpy_impl(
       # First arg is the index, rest are the options
       which = in_vals[0]
       cases = in_vals[1:]
+
+      DEBUG_SELECT_N = True
+      if DEBUG_SELECT_N and eval_jaxpr_numpy._depth == 3:
+        print(f"[SELECT_N depth3 EQN {eqn_idx}]")
+        if isinstance(which, np.ndarray):
+          which_unique = np.unique(which.flatten())
+          print(f"  which: shape={which.shape}, unique={len(which_unique)}, values={which_unique[:5]}")
+        else:
+          print(f"  which: scalar={which}")
+        for i, case in enumerate(cases):
+          if isinstance(case, np.ndarray) and case.size >= 128:
+            case_int32 = case.view(np.int32) if case.dtype == np.float32 else case
+            case_unique = np.unique(case_int32.flatten())
+            print(f"  case[{i}]: shape={case.shape}, unique={len(case_unique)}, values={case_unique[:5]}")
+
       # Use np.choose for element-wise selection
       # np.choose requires which to be int32 and in range [0, len(cases))
       result = np.choose(which, cases)
+
+      if DEBUG_SELECT_N and eval_jaxpr_numpy._depth == 3 and isinstance(result, np.ndarray) and result.size >= 128:
+        result_int32 = result.view(np.int32) if result.dtype == np.float32 else result
+        result_unique = np.unique(result_int32.flatten())
+        print(f"  result: shape={result.shape}, unique={len(result_unique)}, values={result_unique[:5]}")
 
     elif prim.name == 'iota':
       # Create array with incrementing values along a dimension
@@ -297,8 +317,8 @@ def _eval_jaxpr_numpy_impl(
       collapsed_slice_dims = tuple(dimension_numbers.collapsed_slice_dims)
       start_index_map = tuple(dimension_numbers.start_index_map)
 
-      DEBUG_GATHER = False
-      if DEBUG_GATHER and eval_jaxpr_numpy._depth >= 2:
+      DEBUG_GATHER = True
+      if DEBUG_GATHER and eval_jaxpr_numpy._depth == 3:
         print(f"[GATHER] operand.shape={operand.shape}, indices.shape={start_indices.shape}")
         print(f"  operand={operand.flatten()[:10]}")
         print(f"  indices={start_indices.flatten()[:10]}")
@@ -322,19 +342,27 @@ def _eval_jaxpr_numpy_impl(
           # operand[indices[i,j], j] for all i,j
           batch_idx = np.arange(operand.shape[batch_dim])[None, :]
 
-          DEBUG_GATHER_DETAIL = False
-          if DEBUG_GATHER_DETAIL:
+          DEBUG_GATHER_DETAIL = True
+          if DEBUG_GATHER_DETAIL and eval_jaxpr_numpy._depth == 3:
             print(f"[BATCHED GATHER] gather_dim=0, batch_dim=1")
             print(f"  operand.shape={operand.shape}")
             print(f"  indices.shape={indices.shape}, batch_idx.shape={batch_idx.shape}")
             print(f"  indices[0,:5]={indices[0,:5]}")
             print(f"  batch_idx[0,:5]={batch_idx[0,:5]}")
+            operand_int32 = operand.view(np.int32) if operand.dtype == np.float32 else operand
+            print(f"  operand[0,:5]={operand_int32[0,:5]}")
+            print(f"  operand[1,:5]={operand_int32[1,:5]}")
+            print(f"  operand[2,:5]={operand_int32[2,:5]}")
 
           result = operand[indices.astype(np.intp), batch_idx]
 
-          if DEBUG_GATHER_DETAIL:
+          if DEBUG_GATHER_DETAIL and eval_jaxpr_numpy._depth == 3:
             print(f"  result.shape={result.shape}")
             print(f"  result[0,:5]={result[0,:5]}")
+            result_int32 = result.view(np.int32) if result.dtype == np.float32 else result
+            operand_int32 = operand.view(np.int32) if operand.dtype == np.float32 else operand
+            print(f"  operand unique values: {np.unique(operand_int32.flatten())[:6]}")
+            print(f"  result unique values: {np.unique(result_int32.flatten())[:6]}")
         elif gather_dim == 1 and batch_dim == 0:
           # operand[i, indices[i,j]] for all i,j
           batch_idx = np.arange(operand.shape[batch_dim])[:, None]
@@ -504,12 +532,22 @@ def _eval_jaxpr_numpy_impl(
       jit_jaxpr = eqn.params['jaxpr']
 
       DEBUG_JIT = True
-      jit_indices = [1186, 1196, 1206, 1216, 1226, 1236, 1246, 1256, 1266, 1276, 1286, 1296, 1306, 1316, 1326, 1336]
+      jit_indices = [38, 67, 1186, 1196, 1206, 1216, 1226, 1236, 1246, 1256, 1266, 1276, 1286, 1296, 1306, 1316, 1326, 1336]
       if DEBUG_JIT and eval_jaxpr_numpy._depth == 2 and eqn_idx in jit_indices:
         print(f"\n[JIT {eqn_idx}] Inputs:")
         for i, inv in enumerate(in_vals[:5]):
           if isinstance(inv, np.ndarray):
-            print(f"  in[{i}]: shape={inv.shape}, unique={len(np.unique(inv.flatten()[:20]))}, sample={inv.flatten()[:5]}")
+            inv_int32 = inv.view(np.int32) if inv.dtype == np.float32 else inv
+            print(f"  in[{i}]: shape={inv.shape}, unique={len(np.unique(inv_int32.flatten()[:50]))}, sample={inv_int32.flatten()[:10]}")
+        # Show what operations are in this JIT
+        if eqn_idx in [38, 67]:
+          print(f"  JIT contains {len(jit_jaxpr.jaxpr.eqns)} equations:")
+          prim_counts = {}
+          for jeqn in jit_jaxpr.jaxpr.eqns:
+            pname = jeqn.primitive.name
+            prim_counts[pname] = prim_counts.get(pname, 0) + 1
+          for pname, count in sorted(prim_counts.items()):
+            print(f"    {pname}: {count}")
 
       result = eval_jaxpr_numpy(jit_jaxpr.jaxpr, jit_jaxpr.consts, *in_vals, grid_env=grid_env)
 
@@ -518,9 +556,11 @@ def _eval_jaxpr_numpy_impl(
         if isinstance(result, (list, tuple)):
           for i, r in enumerate(result[:5]):
             if isinstance(r, np.ndarray):
-              print(f"  out[{i}]: shape={r.shape}, unique={len(np.unique(r.flatten()[:20]))}, sample={r.flatten()[:5]}")
+              r_int32 = r.view(np.int32) if r.dtype == np.float32 else r
+              print(f"  out[{i}]: shape={r.shape}, unique={len(np.unique(r_int32.flatten()[:50]))}, sample={r_int32.flatten()[:10]}")
         elif isinstance(result, np.ndarray):
-          print(f"  result: shape={result.shape}, unique={len(np.unique(result.flatten()[:20]))}, sample={result.flatten()[:5]}")
+          r_int32 = result.view(np.int32) if result.dtype == np.float32 else result
+          print(f"  result: shape={result.shape}, unique={len(np.unique(r_int32.flatten()[:50]))}, sample={r_int32.flatten()[:10]}")
 
       # Don't unwrap - jit primitive uses multiple_results to determine how to handle result
 
@@ -568,6 +608,72 @@ def _eval_jaxpr_numpy_impl(
           if not is_ref:
             result = result.astype(expected_dtype)
       write(eqn.outvars[0], result)
+
+    # Debug: Track data loss - when arrays transition from 3+ unique values to 2
+    DEBUG_TRACK_LOSS = True
+    # Log operations at depth 3 (inside JIT 38) to find exact operation that loses 2.0
+    if DEBUG_TRACK_LOSS and eval_jaxpr_numpy._depth == 3:
+      results_to_check = []
+      if prim.multiple_results and isinstance(result, (list, tuple)):
+        results_to_check = result
+      else:
+        results_to_check = [result]
+      for res_idx, res in enumerate(results_to_check):
+        if isinstance(res, np.ndarray) and res.size >= 128:
+          res_int32 = res.view(np.int32) if res.dtype == np.float32 else res
+          unique_vals = np.unique(res_int32.flatten())
+          print(f"  [depth3 EQN {eqn_idx}] {prim.name:15s} → shape={res.shape}, unique={len(unique_vals)}, values={unique_vals[:6]}")
+          # Show inputs too
+          for i, inv in enumerate(in_vals[:3]):
+            if isinstance(inv, np.ndarray) and inv.size > 0:
+              inv_int32 = inv.view(np.int32) if inv.dtype == np.float32 else inv
+              inv_unique = np.unique(inv_int32.flatten())
+              print(f"       in[{i}]: shape={inv.shape}, unique={len(inv_unique)}, values={inv_unique[:6]}")
+
+    # Also log first 50 equations to see initial data state
+    if DEBUG_TRACK_LOSS and eval_jaxpr_numpy._depth == 2 and eqn_idx < 50:
+      results_to_check = []
+      if prim.multiple_results and isinstance(result, (list, tuple)):
+        results_to_check = result
+      else:
+        results_to_check = [result]
+      for res_idx, res in enumerate(results_to_check):
+        if isinstance(res, np.ndarray) and res.size >= 128:
+          res_int32 = res.view(np.int32) if res.dtype == np.float32 else res
+          unique_count = len(np.unique(res_int32.flatten()))  # Check ALL values, not just first 50
+          if res.shape == (8, 128):
+            unique_vals = np.unique(res_int32.flatten())
+            print(f"[EQN {eqn_idx:3d}] {prim.name:20s} → shape={res.shape}, unique={unique_count}, values={unique_vals[:5]}")
+
+    if DEBUG_TRACK_LOSS and eval_jaxpr_numpy._depth == 2 and eqn_idx < 1186:
+      # Check all results that are large arrays
+      results_to_check = []
+      if prim.multiple_results and isinstance(result, (list, tuple)):
+        results_to_check = result
+      else:
+        results_to_check = [result]
+
+      for res_idx, res in enumerate(results_to_check):
+        if isinstance(res, np.ndarray) and res.size >= 128:
+          # Count unique values (use view as int32 to match debug output)
+          res_int32 = res.view(np.int32) if res.dtype == np.float32 else res
+          unique_count = len(np.unique(res_int32.flatten()[:50]))
+
+          # Flag if we see only 2 unique values in what should be data array
+          if unique_count == 2 and res.shape == (8, 128):
+            sample_vals = res_int32.flatten()[:10]
+            # Check if it's the specific corruption pattern (1.0 = 1065353216 and NaN = 2147483647)
+            if 1065353216 in sample_vals and 2147483647 in sample_vals:
+              print(f"\n🔴 DATA LOSS at EQN {eqn_idx}: {prim.name}")
+              print(f"   Result has only 2 unique values (should have 3+ data values)")
+              print(f"   shape={res.shape}, unique={unique_count}, sample={sample_vals}")
+              print(f"   Inputs:")
+              for i, inv in enumerate(in_vals[:5]):
+                if isinstance(inv, np.ndarray) and inv.size >= 128:
+                  inv_int32 = inv.view(np.int32) if inv.dtype == np.float32 else inv
+                  inv_unique = len(np.unique(inv_int32.flatten()[:50]))
+                  inv_sample = inv_int32.flatten()[:10]
+                  print(f"     in[{i}]: shape={inv.shape}, unique={inv_unique}, sample={inv_sample}")
 
   # Return outputs
   return [read(v) for v in jaxpr.outvars]
