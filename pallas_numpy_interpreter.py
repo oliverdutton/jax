@@ -519,9 +519,6 @@ def _eval_jaxpr_numpy_impl(
       init_carry = in_vals[num_consts:num_consts + num_carry]
       xs = in_vals[num_consts + num_carry:]
 
-      # Note: Disabling read-only protection for now
-      # The real bug is in the computation producing wrong results
-
       carry = init_carry
       ys = []
 
