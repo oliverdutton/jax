@@ -115,6 +115,37 @@ Even with the bug, we proved NumPy gather is **12x faster** than XLA gather (1.4
 - fa7271cb: Pinpoint exact cause: indices never contain value 2
 - a2f1a430: Confirmed: Bug is NOT in gather implementation
 
+## Latest Update: Systematic Primitive Testing ✅
+
+### All Primitives Work Correctly in Isolation!
+
+Tested and **VERIFIED**:
+- ✅ Bitwise AND: `a & 1` works correctly
+- ✅ Bitwise XOR: `a ^ b` works correctly
+- ✅ SELECT_N (np.choose): Works correctly
+- ✅ Advanced indexing (gather-like): Works correctly
+
+**This proves the bug is NOT in primitive implementations, but in how they interact!**
+
+### Attempted Fixes
+
+1. **Making GET return copies** → Didn't fix it
+2. **Copying consts in scan** → Prevented all mutations (output unchanged: `[3,1,2]`)
+
+### Critical Discovery
+
+The bitonic sort **REQUIRES** mutating refs passed as consts to scan. This is intentional - the algorithm sorts in-place by mutating the input ref through nested jaxpr calls.
+
+### Next Investigation Direction
+
+Found suspicious pad/transpose/slice chain:
+```
+depth3 EQN 1: pad  (128, 8) → (128, 128)
+EQN 10: slice      (128, 128) → (8, 128)
+```
+
+This transforms the data layout. There may be a subtle bug in how these operations create views vs copies, leading to unexpected aliasing.
+
 ## Conclusion
 
-The bug has been traced to its exact location and mechanism. The next session should focus on comparing NumPy vs HLO primitive implementations to find the discrepancy.
+The bug is extremely subtle and related to array view/copy semantics in NumPy operations. The primitives themselves are correct, but their composition creates unexpected data sharing.
