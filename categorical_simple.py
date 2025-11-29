@@ -24,8 +24,12 @@ def categorical(key, logits, axis=-1):
     Returns:
         Integer array of sampled indices
     """
-    # Sample uniform random numbers
-    u = jax.random.uniform(key, logits.shape, dtype=logits.dtype)
+    # Get dtype info for numerical stability (avoid log(0))
+    dtype = logits.dtype
+    tiny = jnp.finfo(dtype).tiny
+
+    # Sample uniform random numbers in (tiny, 1) to avoid log(0)
+    u = jax.random.uniform(key, logits.shape, dtype=dtype, minval=tiny, maxval=1.0)
 
     # Gumbel max trick: -log(-log(u)) + logits, then argmax
     # This is equivalent to sampling from categorical distribution
