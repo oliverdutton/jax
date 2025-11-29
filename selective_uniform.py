@@ -15,12 +15,12 @@ import jax.random as random
 from jax._src.prng import threefry2x32_p
 
 
-def selective_uniform(key, indices, dtype=jnp.float32):
+def selective_uniform(key, indices, dtype=jnp.float32, minval=0., maxval=1.):
     """
     Generate uniform random values for specific indices only.
 
     This produces EXACTLY the same values as:
-        random.uniform(key, (N,), dtype=dtype)[indices]
+        random.uniform(key, (N,), dtype=dtype, minval=minval, maxval=maxval)[indices]
 
     but only computes the requested indices, saving memory and computation.
 
@@ -28,15 +28,20 @@ def selective_uniform(key, indices, dtype=jnp.float32):
         key: JAX PRNG key
         indices: Array-like of integer indices to compute
         dtype: Output dtype (default: jnp.float32)
+        minval: Minimum value (inclusive), broadcast-compatible with output shape
+        maxval: Maximum value (exclusive), broadcast-compatible with output shape
 
     Returns:
-        JAX array of uniform random values in [0, 1) for the specified indices
+        JAX array of uniform random values in [minval, maxval) for the specified indices
 
     Example:
         >>> key = random.key(42)
         >>> indices = jnp.array([7, 9, 100])
         >>> values = selective_uniform(key, indices)
         >>> # values[i] == random.uniform(key, (101,))[indices[i]]
+        >>>
+        >>> # With custom range
+        >>> values = selective_uniform(key, indices, minval=-1.0, maxval=1.0)
 
     Note:
         This uses internal JAX APIs (threefry2x32_p) which may change between
@@ -62,7 +67,15 @@ def selective_uniform(key, indices, dtype=jnp.float32):
     bits = bits1 ^ bits2
 
     # Convert bits to uniform float in [0, 1)
-    return _bits_to_uniform(bits, dtype)
+    floats = _bits_to_uniform(bits, dtype)
+
+    # Scale to [minval, maxval) following JAX's implementation
+    minval = jax.lax.convert_element_type(minval, dtype)
+    maxval = jax.lax.convert_element_type(maxval, dtype)
+
+    # Scale and shift: floats * (maxval - minval) + minval
+    # Use lax.max to ensure values are at least minval
+    return jax.lax.max(minval, floats * (maxval - minval) + minval)
 
 
 def _bits_to_uniform(bits, dtype):
@@ -105,7 +118,7 @@ def _bits_to_uniform(bits, dtype):
     return floats - jnp.ones((), dtype=dtype)
 
 
-def selective_uniform_multidim(key, indices, shape, dtype=jnp.float32):
+def selective_uniform_multidim(key, indices, shape, dtype=jnp.float32, minval=0., maxval=1.):
     """
     Generate uniform random values for specific multi-dimensional indices.
 
@@ -114,6 +127,8 @@ def selective_uniform_multidim(key, indices, shape, dtype=jnp.float32):
         indices: Array of shape (N, ndim) where each row is a multi-dim index
         shape: Tuple indicating the full array shape
         dtype: Output dtype (default: jnp.float32)
+        minval: Minimum value (inclusive), broadcast-compatible with output shape
+        maxval: Maximum value (exclusive), broadcast-compatible with output shape
 
     Returns:
         JAX array of length N with uniform random values
@@ -123,6 +138,10 @@ def selective_uniform_multidim(key, indices, shape, dtype=jnp.float32):
         >>> # Get values at positions (7, 9) and (42, 13) from a (100, 50) array
         >>> indices = jnp.array([[7, 9], [42, 13]])
         >>> values = selective_uniform_multidim(key, indices, shape=(100, 50))
+        >>>
+        >>> # With custom range
+        >>> values = selective_uniform_multidim(key, indices, shape=(100, 50),
+        ...                                     minval=-1.0, maxval=1.0)
     """
     indices = jnp.asarray(indices)
 
@@ -133,7 +152,7 @@ def selective_uniform_multidim(key, indices, shape, dtype=jnp.float32):
     flat_indices = jnp.sum(indices * strides[:-1], axis=-1)
 
     # Use regular selective_uniform with flat indices
-    return selective_uniform(key, flat_indices.astype(jnp.uint32), dtype)
+    return selective_uniform(key, flat_indices.astype(jnp.uint32), dtype, minval, maxval)
 
 
 # ============================================================================
@@ -208,6 +227,43 @@ if __name__ == "__main__":
         match = jnp.allclose(selective, full[test_indices])
         print(f"{str(test_dtype):<12} Match: {match}")
 
+    # Test minval/maxval
+    print("\n" + "=" * 80)
+    print("Test 4: Custom minval/maxval")
+    print("=" * 80)
+
+    test_ranges = [
+        (0., 1., "Default [0, 1)"),
+        (-1., 1., "Range [-1, 1)"),
+        (10., 20., "Range [10, 20)"),
+        (0., 10., "Range [0, 10)"),
+    ]
+
+    test_indices = jnp.array([7, 9, 42])
+
+    print(f"\n{'Range':<20} {'Min':<12} {'Max':<12} {'Match':<10}")
+    print("-" * 60)
+
+    for minval, maxval, description in test_ranges:
+        full = random.uniform(key, (128,), minval=minval, maxval=maxval)
+        selective = selective_uniform(key, test_indices, minval=minval, maxval=maxval)
+
+        # Verify values are in range
+        in_range = jnp.all((selective >= minval) & (selective < maxval))
+
+        # Verify exact match with full array
+        match = jnp.allclose(selective, full[test_indices])
+
+        print(f"{description:<20} {jnp.min(selective):<12.4f} {jnp.max(selective):<12.4f} {str(match):<10}")
+
+    # Show actual values for one case
+    print(f"\nExample with range [-1, 1):")
+    selective_scaled = selective_uniform(key, jnp.array([7, 9]), minval=-1., maxval=1.)
+    full_scaled = random.uniform(key, (128,), minval=-1., maxval=1.)
+    print(f"  Selective[7]: {selective_scaled[0]:.6f}")
+    print(f"  Full[7]:      {full_scaled[7]:.6f}")
+    print(f"  Match: {jnp.allclose(selective_scaled[0], full_scaled[7])}")
+
     # Performance comparison
     print("\n" + "=" * 80)
     print("Memory Efficiency")
@@ -235,6 +291,9 @@ Basic usage:
     key = random.key(42)
     indices = jnp.array([7, 9, 100])
     values = selective_uniform(key, indices)
+
+With custom range:
+    values = selective_uniform(key, indices, minval=-1.0, maxval=1.0)
 
 Multi-dimensional:
     indices = jnp.array([[7, 9], [42, 13]])
