@@ -12,7 +12,7 @@ For production code, prefer generating arrays up to max(indices)+1.
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from jax._src.prng import threefry2x32_p
+from jax.extend.random import threefry2x32_p
 
 
 def selective_uniform(key, indices, dtype=jnp.float32, minval=0., maxval=1.):
@@ -48,8 +48,8 @@ def selective_uniform(key, indices, dtype=jnp.float32, minval=0., maxval=1.):
         versions. For production code, consider using the public API approach
         of generating arrays up to max(indices)+1.
     """
-    # Convert indices to JAX array
-    indices = jnp.asarray(indices, dtype=jnp.uint32)
+    # Convert indices to uint32 array
+    indices = jnp.asarray(indices).astype(jnp.uint32)
 
     # Extract key components
     key_data = random.key_data(key)
@@ -105,10 +105,7 @@ def _bits_to_uniform(bits, dtype):
 
     # Create bit pattern for 1.0 in the target dtype
     # For float32: 0x3F800000 (sign=0, exp=127, mantissa=0)
-    one_bits = jnp.asarray(
-        jnp.ones((), dtype=dtype).view(jnp.uint32),
-        dtype=jnp.uint32
-    )
+    one_bits = jnp.ones((), dtype=dtype).view(jnp.uint32)
 
     # OR with 1.0 bit pattern to set exponent
     float_bits = jax.lax.bitwise_or(float_bits, one_bits)
@@ -149,10 +146,10 @@ def selective_uniform_multidim(key, indices, shape, dtype=jnp.float32, minval=0.
     # Using row-major (C-style) ordering
     strides = jnp.array([jnp.prod(jnp.array(shape[i+1:]))
                          for i in range(len(shape))] + [1])
-    flat_indices = jnp.sum(indices * strides[:-1], axis=-1)
+    flat_indices = (indices * strides[:-1]).sum(axis=-1)
 
     # Use regular selective_uniform with flat indices
-    return selective_uniform(key, flat_indices.astype(jnp.uint32), dtype, minval, maxval)
+    return selective_uniform(key, flat_indices, dtype, minval, maxval)
 
 
 # ============================================================================
