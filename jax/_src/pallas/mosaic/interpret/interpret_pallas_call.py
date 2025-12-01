@@ -28,6 +28,7 @@ from jax._src import callback
 from jax._src import config
 from jax._src import core as jax_core
 from jax._src import frozen_dict
+from jax._src import lax_reference
 from jax._src import linear_util as lu
 from jax._src import pjit
 from jax._src import source_info_util
@@ -1239,8 +1240,9 @@ def _get_memory_space_and_raise_if_hbm(aval, primitive_name, message=None):
   return memory_space
 
 
-def _interpret_jaxpr(
+def eval_pallas_jaxpr(
     jaxpr,
+    consts,
     *args,
     axis_sizes,
     mesh,
@@ -1248,39 +1250,37 @@ def _interpret_jaxpr(
     device_id,
     local_core_id,
     compiler_params,
-    interpret_params
+    interpret_params,
 ):
   env = {}
-
   def read(var):
     if isinstance(var, jax_core.Literal):
-      result = var.val
-    else:
-      result = env[var]
-    if isinstance(result, Placeholder):
-      result = jax.lax.full(result.shape, _SENTINEL, result.dtype)
-    return result
+      return var.val
+    return env[var]
 
   def write(var, value):
     if interpret_params.skip_floating_point_ops and _is_float(value.dtype):
       value = Placeholder(value.shape, value.dtype)
     env[var] = value
 
-  jax._src.util.safe_map(write, jaxpr.constvars + jaxpr.invars, args)
+  # The recursive implementation of eval_pallas_jaxpr
+  def _eval(jaxpr, consts, *args):
+    return eval_pallas_jaxpr(
+        jaxpr,
+        consts,
+        *args,
+        axis_sizes=axis_sizes,
+        mesh=mesh,
+        axis_indices=axis_indices,
+        device_id=device_id,
+        local_core_id=local_core_id,
+        compiler_params=compiler_params,
+        interpret_params=interpret_params,
+    )
 
-  # TODO(jburnim): Clean up and finish this evaluation loop.  For example:
-  #  - Replace the big if-statement with a dictionary of rules.
-  #  - Handle other higher-order primitives?
-  _interpret = functools.partial(
-      _interpret_jaxpr,
-      axis_sizes=axis_sizes,
-      mesh=mesh,
-      axis_indices=axis_indices,
-      device_id=device_id,
-      local_core_id=local_core_id,
-      compiler_params=compiler_params,
-      interpret_params=interpret_params,
-  )
+  jax._src.util.safe_map(write, jaxpr.constvars, consts)
+  jax._src.util.safe_map(write, jaxpr.invars, args)
+
   for eqn in jaxpr.eqns:
     with source_info_util.user_context(
          eqn.source_info.traceback, name_stack=eqn.source_info.name_stack):
@@ -1302,15 +1302,13 @@ def _interpret_jaxpr(
         memory_space = _get_memory_space_and_raise_if_hbm(
             eqn.invars[0].aval, 'load_p'
         )
-        out = callback.io_callback(
-            functools.partial(get, source_info=eqn.source_info),
-            eqn.outvars[0].aval,
+        out = get(
             device_id,
             local_core_id,
             TPU_MEMORY_SPACE_IDXS[memory_space],
             ref,
             transforms,
-            ordered=True,
+            source_info=eqn.source_info,
         )
 
       elif prim is primitives.swap_p:
@@ -1319,9 +1317,7 @@ def _interpret_jaxpr(
         memory_space = _get_memory_space_and_raise_if_hbm(
             eqn.invars[0].aval, 'swap_p'
         )
-        out = callback.io_callback(
-            functools.partial(swap, source_info=eqn.source_info),
-            eqn.outvars[0].aval,
+        out = swap(
             device_id,
             local_core_id,
             TPU_MEMORY_SPACE_IDXS[memory_space],
@@ -1329,7 +1325,7 @@ def _interpret_jaxpr(
             transforms,
             val,
             mask,
-            ordered=True,
+            source_info=eqn.source_info,
         )
 
       elif prim is primitives.delay_p:
@@ -1342,7 +1338,7 @@ def _interpret_jaxpr(
 
       elif prim is mosaic_primitives.prng_random_bits_p:
         # TODO(jburnim): Implement this properly?
-        out = jnp.zeros(eqn.params['shape'], jnp.int32)
+        out = np.zeros(eqn.params['shape'], np.int32)
 
       elif ((prim is lax.axis_index_p)
             and (mesh is not None) and (eqn.params['axis_name'] in mesh.shape)):
@@ -1358,50 +1354,55 @@ def _interpret_jaxpr(
         out = axis_indices[eqn.params['axis_name']]
 
       elif prim is lax.cond_p:
-        def _make_branch(jaxpr):
-          return lambda *args: _interpret(jaxpr, *args)
         invals = deferred_invals()
-        out = lax.switch(
-            invals[0],
-            [_make_branch(branch_jaxpr.jaxpr)
-            for branch_jaxpr in eqn.params['branches']],
-            *invals[1:])
+        pred = invals[0]
+        # TODO(jburnim): Support multi-branch cond.
+        branches = eqn.params['branches']
+        branch_idx = 1 if pred else 0
+        branch_jaxpr = branches[branch_idx]
+        out = _eval(branch_jaxpr.jaxpr, branch_jaxpr.consts, *invals[1:])
 
       elif prim is lax.scan_p:
         consts, init_carry, xs = split_list(
             deferred_invals(),
             [eqn.params['num_consts'], eqn.params['num_carry']],
         )
-        def _scan_body(c, a):
-          return split_list(
-              _interpret(eqn.params['jaxpr'].jaxpr, *consts, *c, *a),
-              [eqn.params['num_carry']])
-        carry, out = lax.scan(_scan_body, init_carry, xs=xs,
-                              length=eqn.params.get('length', None))
-        out = carry + out
+        num_carry = eqn.params['num_carry']
+        scan_jaxpr = eqn.params['jaxpr']
+        length = eqn.params.get('length', len(xs[0]) if xs else 0)
+
+        carry = init_carry
+        ys = []
+        for i in range(length):
+            x_slice = [x[i] for x in xs]
+            scan_out = _eval(scan_jaxpr.jaxpr, scan_jaxpr.consts, *consts, *carry, *x_slice)
+            carry = scan_out[:num_carry]
+            ys.append(scan_out[num_carry:])
+
+        if ys:
+            # Transpose ys to match lax.scan output structure (stacked)
+            ys_stacked = [np.stack([y[i] for y in ys]) for i in range(len(ys[0]))]
+            out = carry + ys_stacked
+        else:
+            out = carry
 
       elif prim is lax.while_p:
         cond_consts, body_consts, init_vals = split_list(
             deferred_invals(),
             [eqn.params['cond_nconsts'], eqn.params['body_nconsts']],
         )
-        out = lax.while_loop(
-            lambda args: _interpret(
-                eqn.params['cond_jaxpr'].jaxpr, *cond_consts, *args)[0],
-            lambda args: _interpret(
-                eqn.params['body_jaxpr'].jaxpr, *body_consts, *args),
-            init_vals)
+        cond_jaxpr = eqn.params['cond_jaxpr']
+        body_jaxpr = eqn.params['body_jaxpr']
+
+        vals = init_vals
+        while _eval(cond_jaxpr.jaxpr, cond_consts, *vals)[0]:
+            vals = _eval(body_jaxpr.jaxpr, body_consts, *vals)
+        out = vals
 
       elif prim is pjit.jit_p:
-        def f(*args, jaxpr):
-          return _interpret(jaxpr.jaxpr, *jaxpr.consts, *args)
         invals = deferred_invals()
-        in_avals = tuple(jax_core.shaped_abstractify(i) for i in invals)
-        new_jaxpr = _to_jaxpr(
-            lu.wrap_init(functools.partial(f, jaxpr=eqn.params['jaxpr']),
-                        debug_info=eqn.params['jaxpr'].jaxpr.debug_info),
-            in_avals)
-        out = pjit.jit_p.bind(*invals, **(eqn.params | {'jaxpr': new_jaxpr}))
+        # Just evaluate the jaxpr, ignoring JIT since we are in interpret mode
+        out = _eval(eqn.params['jaxpr'].jaxpr, eqn.params['jaxpr'].consts, *invals)
 
       elif prim is primitives.run_scoped_p:
         if eqn.params['collective_axes']:
@@ -1415,13 +1416,10 @@ def _interpret_jaxpr(
         for v in eqn.params['jaxpr'].invars:
           if v.aval.memory_space == mosaic_core.MemorySpace.SEMAPHORE:
             allocs.append(
-                callback.io_callback(
-                    _allocate_semaphores,
-                    jax.ShapeDtypeStruct(v.aval.shape, jnp.int16),
+                _allocate_semaphores(
                     device_id,
                     local_core_id,
                     v.aval.shape,
-                    ordered=True,
                 )
             )
           else:
@@ -1432,40 +1430,28 @@ def _interpret_jaxpr(
             else:
               memory_space = v.aval.memory_space
             allocs.append(
-                callback.io_callback(
-                    _allocate_buffer,
-                    jax.ShapeDtypeStruct((), jnp.int16),
+                _allocate_buffer(
                     device_id,
                     local_core_id,
                     TPU_MEMORY_SPACE_IDXS[memory_space],
                     _uninitialized_array(
                         v.aval.shape, v.aval.dtype, interpret_params
                     ),
-                    ordered=True,
                 )
             )
 
-        out = _interpret(eqn.params['jaxpr'], *deferred_invals(), *allocs)
+        out = _eval(eqn.params['jaxpr'], deferred_invals(), *allocs)
 
         for a, v in zip(allocs, eqn.params['jaxpr'].invars):
           if v.aval.memory_space == mosaic_core.MemorySpace.SEMAPHORE:
             # TODO(jburnim): De-allocate semaphores.
-            # callback.io_callback(
-            #     _deallocate_semaphores,
-            #     None,
-            #     device_id,
-            #     a,
-            #     ordered=True)
             pass
           else:
-            callback.io_callback(
-                _deallocate_buffer,
-                None,
+            _deallocate_buffer(
                 device_id,
                 local_core_id,
                 TPU_MEMORY_SPACE_IDXS[v.aval.memory_space],
                 a,
-                ordered=True,
             )
 
       elif prim is state_primitives.get_p:
@@ -1473,15 +1459,13 @@ def _interpret_jaxpr(
             eqn.invars[0].aval, 'get_p'
         )
         invals = deferred_invals()
-        out = callback.io_callback(
-            functools.partial(get, source_info=eqn.source_info),
-            eqn.outvars[0].aval,
+        out = get(
             device_id,
             local_core_id,
             TPU_MEMORY_SPACE_IDXS[memory_space],
             invals[0],
             jax.tree.unflatten(eqn.params['tree'], invals[1:]),
-            ordered=True,
+            source_info=eqn.source_info,
         )
 
       elif prim is state_primitives.swap_p:
@@ -1489,9 +1473,7 @@ def _interpret_jaxpr(
             eqn.invars[0].aval, 'swap_p'
         )
         invals = deferred_invals()
-        out = callback.io_callback(
-            functools.partial(swap, source_info=eqn.source_info),
-            eqn.outvars[0].aval,
+        out = swap(
             device_id,
             local_core_id,
             TPU_MEMORY_SPACE_IDXS[memory_space],
@@ -1499,7 +1481,7 @@ def _interpret_jaxpr(
             jax.tree.unflatten(eqn.params['tree'], invals[2:]),
             invals[1],
             None,
-            ordered=True,
+            source_info=eqn.source_info,
         )
 
       elif prim is mosaic_primitives.dma_start_p:
@@ -1524,9 +1506,7 @@ def _interpret_jaxpr(
         dst_memory_space = getattr(orig_dst_ref.aval, 'memory_space', None)
         if dst_memory_space is None:
           dst_memory_space = mosaic_core.MemorySpace.ANY
-        callback.io_callback(
-            functools.partial(dma_start, source_info=eqn.source_info),
-            (),
+        dma_start(
             device_id,
             local_core_id,
             TPU_MEMORY_SPACE_IDXS[src_memory_space],
@@ -1538,7 +1518,7 @@ def _interpret_jaxpr(
             state_discharge.transform_array(dst_sem, dst_sem_transforms),
             state_discharge.transform_array(src_sem, src_sem_transforms),
             target_device_id,
-            ordered=True,
+            source_info=eqn.source_info,
         )
         out = []
 
@@ -1556,24 +1536,18 @@ def _interpret_jaxpr(
         ) = jax.tree.unflatten(eqn.params['tree'], deferred_invals())
         read_shape, read_dtype = _compute_transformed_shape_and_dtype(
             eqn.invars[0].aval.shape, eqn.invars[0].aval.dtype, src_transforms)
-        callback.io_callback(
-            dma_wait,
-            (),
+        dma_wait(
             device_id,
             local_core_id,
             state_discharge.transform_array(dst_sem, dst_sem_transforms),
             math.prod(read_shape) * read_dtype.itemsize,
-            ordered=True,
         )
         out = []
 
       elif prim is mosaic_primitives.get_barrier_semaphore_p:
-        out = callback.io_callback(
-            get_barrier_semaphore,
-            jax.ShapeDtypeStruct((), jnp.int16),
+        out = get_barrier_semaphore(
             device_id,
             _get_mosaic_params(compiler_params).collective_id,
-            ordered=True,
         )
 
       elif prim is primitives.semaphore_signal_p:
@@ -1581,16 +1555,13 @@ def _interpret_jaxpr(
             jax.tree.unflatten(eqn.params['args_tree'], deferred_invals()))
         target_device_id = _device_id_to_logical(
             target_device_id, eqn.params['device_id_type'], axis_sizes)
-        callback.io_callback(
-            semaphore_signal,
-            (),
+        semaphore_signal(
             device_id,
             local_core_id,
             state_discharge.transform_array(sem, sem_transforms),
             inc,
             target_device_id,
             core_index,
-            ordered=True,
         )
         out = []
 
@@ -1599,14 +1570,11 @@ def _interpret_jaxpr(
             jax.tree.unflatten(eqn.params['args_tree'], deferred_invals()))
         if not decrement:
           raise NotImplementedError('Non-decrementing wait is not supported.')
-        callback.io_callback(
-            semaphore_wait,
-            (),
+        semaphore_wait(
             device_id,
             local_core_id,
             state_discharge.transform_array(sem, sem_transforms),
             value,
-            ordered=True,
         )
         out = []
 
@@ -1628,13 +1596,76 @@ def _interpret_jaxpr(
           if not prim.multiple_results:
             out = out[0]
         else:
-          subfuns, bind_params = eqn.primitive.get_bind_params(eqn.params)
-          out = prim.bind(*subfuns, *deferred_invals(), **bind_params)
+          # Use lax_reference for standard primitives
+          op = getattr(lax_reference, prim.name, None)
+          if not op:
+             # try numpy
+             op = getattr(np, prim.name, None)
+
+          if op:
+              # Some primitives need special handling for params
+              params = dict(eqn.params)
+              # Filter or map params if necessary, similar to pallas_numpy_interpreter.py
+              # For now, we assume lax_reference API matches or is close enough
+
+              # Special case: lax_reference.convert_element_type needs 'dtype'
+              if prim.name == 'convert_element_type' and 'new_dtype' in params:
+                  params['dtype'] = params.pop('new_dtype')
+
+              if prim.name == 'transpose' and 'permutation' in params:
+                  params['axes'] = params.pop('permutation')
+
+              if prim.name == 'concatenate':
+                 # concatenate signature is (operands, dimension)
+                 out = op(deferred_invals(), params.get('dimension', 0))
+              else:
+                 out = op(*deferred_invals(), **params)
+
+              # Ensure we copy if it's a view and we might need to be safe
+              # (though in this loop we are treating values as immutable mostly, except refs)
+              if isinstance(out, np.ndarray):
+                  out = np.array(out, copy=True)
+          else:
+              # Fallback to bind (which might fail if we are not tracing)
+              # But we are in a pure python callback, so bind might not work if it expects tracing.
+              # Actually, prim.bind works for most JAX primitives even on concrete data (it delegates to impl)
+              subfuns, bind_params = eqn.primitive.get_bind_params(eqn.params)
+              out = prim.bind(*subfuns, *deferred_invals(), **bind_params)
 
       out = out if prim.multiple_results else [out]
       jax._src.util.safe_map(write, eqn.outvars, out)
 
   return jax._src.util.safe_map(read, jaxpr.outvars)
+
+def _interpret_jaxpr(
+    jaxpr,
+    *args,
+    axis_sizes,
+    mesh,
+    axis_indices,
+    device_id,
+    local_core_id,
+    compiler_params,
+    interpret_params
+):
+  # Wrap the execution in a single io_callback
+  callback.io_callback(
+      functools.partial(
+          eval_pallas_jaxpr,
+          jaxpr,
+          jaxpr.consts,
+          axis_sizes=axis_sizes,
+          mesh=mesh,
+          axis_indices=axis_indices,
+          compiler_params=compiler_params,
+          interpret_params=interpret_params,
+      ),
+      (),  # Return type (void for now as we operate by side effects on shared memory)
+      *args, # args contains buffer IDs which are inputs
+      device_id,
+      local_core_id,
+      ordered=True
+  )
 
 def _compute_start_indices(
     block_mapping, loop_idx, *args,
