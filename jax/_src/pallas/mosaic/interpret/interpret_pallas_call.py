@@ -42,6 +42,8 @@ from jax._src.pallas.mosaic.interpret.race_detection_state import RaceDetectionS
 from jax._src.state import discharge as state_discharge
 from jax._src.state import indexing
 from jax._src.state import primitives as state_primitives
+from jax._src.state import types as state_types
+from jax._src.state import utils as state_utils
 from jax._src.typing import Array
 from jax._src.util import (
     safe_map,
@@ -592,10 +594,41 @@ def _compose_slice_or_index(slice_or_idx1, slice_or_idx2):
       j += 1
 
 
-def _to_range(transforms) -> tuple[slice | int, ...]:
-  ret = ()
+def _separate_transforms(transforms):
+  """Separates transforms into indexer and type transforms.
+
+  Returns:
+    A tuple of (indexer_transforms, type_transforms).
+  """
+  indexer_transforms = []
+  type_transforms = []
   for transform in transforms:
-    # For now, assume only NDIndexer transforms.
+    if isinstance(transform, indexing.NDIndexer):
+      indexer_transforms.append(transform)
+    elif isinstance(transform, (state_types.RefBitcaster, state_types.RefReshaper)):
+      type_transforms.append(transform)
+    else:
+      raise NotImplementedError(f"Unsupported transform: {transform}")
+  return indexer_transforms, type_transforms
+
+
+def _apply_type_transforms(result, type_transforms):
+  """Applies type transforms (bitcast, reshape) to a result."""
+  for transform in type_transforms:
+    if isinstance(transform, state_types.RefBitcaster):
+      result = state_utils.bitcast(result, transform.dtype)
+    elif isinstance(transform, state_types.RefReshaper):
+      result = result.reshape(transform.shape)
+    else:
+      raise NotImplementedError(f"Unsupported type transform: {transform}")
+  return result
+
+
+def _to_range(transforms) -> tuple[slice | int, ...]:
+  # Only process indexer transforms for computing the range
+  indexer_transforms, _ = _separate_transforms(transforms)
+  ret = ()
+  for transform in indexer_transforms:
     ret = _compose_slice_or_index(
         ret, tuple(_transform_slice_or_index(i) for i in transform.indices)
     )
@@ -629,7 +662,12 @@ def get(
   memory_space = TPU_MEMORY_SPACE_NAMES[int(memory_space)]
   buffer_id = int(buffer_id)
   try:
-    transforms = jax.tree.map(int, transforms)
+    # Only convert NDIndexer contents to int, leave RefBitcaster/RefReshaper as-is
+    def convert_indexer(t):
+      if isinstance(t, indexing.NDIndexer):
+        return indexing.NDIndexer(tuple(jax.tree.map(int, t.indices)))
+      return t
+    transforms = tuple(convert_indexer(t) for t in transforms)
   except:
     raise ValueError('Advanced indexers are not supported on TPU')
   src_device_id = _to_int(src_device_id)
@@ -649,6 +687,8 @@ def get(
   global_core_id = shared_memory.get_global_core_id(device_id, local_core_id)
 
   key = (memory_space, buffer_id, device_id, local_core_id_for_buffer)
+  # Separate indexer and type transforms
+  _, type_transforms = _separate_transforms(transforms)
   read_range = _to_range(transforms)
   ret, (shape, dtype), clock_ = shared_memory.get_buffer_content(
       key, read_range, global_core_id
@@ -726,6 +766,10 @@ def get(
         source_info=source_info,
     )
 
+  # Apply type transforms (bitcast, reshape) to the result
+  if type_transforms:
+    ret = _apply_type_transforms(ret, type_transforms)
+
   return ret
 
 
@@ -750,7 +794,12 @@ def store(
   memory_space = TPU_MEMORY_SPACE_NAMES[int(memory_space)]
   buffer_id = int(buffer_id)
   try:
-    transforms = jax.tree.map(int, transforms)
+    # Only convert NDIndexer contents to int, leave RefBitcaster/RefReshaper as-is
+    def convert_indexer(t):
+      if isinstance(t, indexing.NDIndexer):
+        return indexing.NDIndexer(tuple(jax.tree.map(int, t.indices)))
+      return t
+    transforms = tuple(convert_indexer(t) for t in transforms)
   except:
     raise ValueError('Advanced indexers are not supported on TPU')
   val = np.array(val)
@@ -826,7 +875,12 @@ def swap(
   memory_space = TPU_MEMORY_SPACE_NAMES[int(memory_space)]
   buffer_id = int(buffer_id)
   try:
-    transforms = jax.tree.map(int, transforms)
+    # Only convert NDIndexer contents to int, leave RefBitcaster/RefReshaper as-is
+    def convert_indexer(t):
+      if isinstance(t, indexing.NDIndexer):
+        return indexing.NDIndexer(tuple(jax.tree.map(int, t.indices)))
+      return t
+    transforms = tuple(convert_indexer(t) for t in transforms)
   except:
     raise ValueError('Advanced indexers are not supported on TPU')
   val = np.array(val)
@@ -1039,9 +1093,14 @@ def dma_start(
       device_id, src_local_core_id
   )
   src_memory_space, src_id = int(src_memory_space), int(src_id)
-  src_transforms = jax.tree.map(int, src_transforms)
+  # Only convert NDIndexer contents to int, leave RefBitcaster/RefReshaper as-is
+  def convert_indexer(t):
+    if isinstance(t, indexing.NDIndexer):
+      return indexing.NDIndexer(tuple(jax.tree.map(int, t.indices)))
+    return t
+  src_transforms = tuple(convert_indexer(t) for t in src_transforms)
   dst_memory_space, dst_id = int(dst_memory_space), int(dst_id)
-  dst_transforms = jax.tree.map(int, dst_transforms)
+  dst_transforms = tuple(convert_indexer(t) for t in dst_transforms)
   dst_sem_id = int(dst_sem_id)
   src_sem_id = int(src_sem_id) if src_sem_id is not None else None
   if dst_device_id is not None:
