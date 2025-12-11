@@ -624,6 +624,66 @@ def _apply_type_transforms(result, type_transforms):
   return result
 
 
+def _invert_type_transforms(value, type_transforms, buffer_dtype, buffer_shape_after_indexing):
+  """Inverts type transforms to convert a value back to buffer format.
+
+  Args:
+    value: The value in the transformed format
+    type_transforms: List of type transforms applied to the ref
+    buffer_dtype: The original dtype of the buffer (before any transforms)
+    buffer_shape_after_indexing: The shape of the buffer region after applying
+      indexer transforms, which is what the first type transform would see
+
+  Returns:
+    The value converted back to the original buffer format
+  """
+  # Apply inverse transforms in reverse order
+  for transform in reversed(type_transforms):
+    if isinstance(transform, state_types.RefBitcaster):
+      # Bitcast back to the dtype before this transform was applied
+      # Find what dtype this transform was applied to
+      idx = type_transforms.index(transform)
+      if idx == 0:
+        # This was the first transform, bitcast back to buffer dtype
+        source_dtype = buffer_dtype
+      else:
+        # Find the dtype after all previous transforms
+        prev_transform = type_transforms[idx - 1]
+        if isinstance(prev_transform, state_types.RefBitcaster):
+          source_dtype = prev_transform.dtype
+        elif isinstance(prev_transform, state_types.RefReshaper):
+          # Reshape doesn't change dtype, look further back
+          for j in range(idx - 1, -1, -1):
+            if isinstance(type_transforms[j], state_types.RefBitcaster):
+              source_dtype = type_transforms[j].dtype
+              break
+          else:
+            source_dtype = buffer_dtype
+        else:
+          source_dtype = buffer_dtype
+      value = state_utils.bitcast(value, source_dtype)
+    elif isinstance(transform, state_types.RefReshaper):
+      # For reshape, compute the shape before this transform was applied
+      idx = type_transforms.index(transform)
+      if idx == 0:
+        # This was the first transform, reshape back to buffer shape
+        source_shape = buffer_shape_after_indexing
+      else:
+        # Reshape back to the shape after all previous transforms
+        prev_transform = type_transforms[idx - 1]
+        if isinstance(prev_transform, state_types.RefReshaper):
+          source_shape = prev_transform.shape
+        elif isinstance(prev_transform, state_types.RefBitcaster):
+          # Bitcast changes shape, use its shape
+          source_shape = prev_transform.shape
+        else:
+          source_shape = buffer_shape_after_indexing
+      value = value.reshape(source_shape)
+    else:
+      raise NotImplementedError(f"Unsupported type transform: {transform}")
+  return value
+
+
 def _to_range(transforms) -> tuple[slice | int, ...]:
   # Only process indexer transforms for computing the range
   indexer_transforms, _ = _separate_transforms(transforms)
@@ -820,7 +880,34 @@ def store(
   global_core_id = shared_memory.get_global_core_id(device_id, local_core_id)
 
   key = (memory_space, buffer_id, device_id, local_core_id_for_buffer)
+
+  # Separate indexer and type transforms
+  _, type_transforms = _separate_transforms(transforms)
   write_range = _to_range(transforms)
+
+  # If there are type transforms, we need to invert them before writing
+  if type_transforms:
+    # Get buffer metadata to know the original dtype and shape
+    _, (buffer_shape, buffer_dtype), _ = shared_memory.get_buffer_content(
+        key, (), global_core_id
+    )
+    # Compute the shape of the write region
+    write_shape = []
+    for dim_size, idx_or_slice in itertools.zip_longest(
+        buffer_shape, write_range, fillvalue=None
+    ):
+      if idx_or_slice is None:
+        write_shape.append(dim_size)
+      elif isinstance(idx_or_slice, int):
+        continue  # Integer indexing removes dimension
+      else:
+        dim_size = (idx_or_slice.stop - idx_or_slice.start) // idx_or_slice.step
+        write_shape.append(dim_size)
+    write_shape = tuple(write_shape)
+
+    # Apply inverse type transforms to convert value back to buffer format
+    val = _invert_type_transforms(val, type_transforms, buffer_dtype, write_shape)
+
   in_bounds, (shape, _), clock_ = shared_memory.store_buffer_content(
       key, write_range, val, global_core_id
   )
@@ -896,7 +983,34 @@ def swap(
   global_core_id = shared_memory.get_global_core_id(device_id, local_core_id)
 
   key = (memory_space, buffer_id, device_id, local_core_id_for_buffer)
+
+  # Separate indexer and type transforms
+  _, type_transforms = _separate_transforms(transforms)
   read_write_range = _to_range(transforms)
+
+  # If there are type transforms, we need to invert them before swapping
+  if type_transforms:
+    # Get buffer metadata to know the original dtype and shape
+    _, (buffer_shape, buffer_dtype), _ = shared_memory.get_buffer_content(
+        key, (), global_core_id
+    )
+    # Compute the shape of the swap region
+    swap_shape = []
+    for dim_size, idx_or_slice in itertools.zip_longest(
+        buffer_shape, read_write_range, fillvalue=None
+    ):
+      if idx_or_slice is None:
+        swap_shape.append(dim_size)
+      elif isinstance(idx_or_slice, int):
+        continue  # Integer indexing removes dimension
+      else:
+        dim_size = (idx_or_slice.stop - idx_or_slice.start) // idx_or_slice.step
+        swap_shape.append(dim_size)
+    swap_shape = tuple(swap_shape)
+
+    # Apply inverse type transforms to convert value back to buffer format
+    val = _invert_type_transforms(val, type_transforms, buffer_dtype, swap_shape)
+
   ret, (shape, _), clock = shared_memory.swap_buffer_content(
       key, read_write_range, val, mask, global_core_id
   )
@@ -928,6 +1042,11 @@ def swap(
         read_write_range,
         source_info=source_info,
     )
+
+  # Apply type transforms to the swapped-out value (forward direction)
+  if type_transforms and ret is not None:
+    ret = _apply_type_transforms(ret, type_transforms)
+
   return ret
 
 
