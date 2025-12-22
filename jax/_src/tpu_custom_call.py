@@ -394,6 +394,16 @@ def _lower_mosaic_module_to_asm(
         f"target-version={ir_version}" if ir_version is not None else ""
     )
     try:
+      # Run CSE and canonicalize passes before serialization to deduplicate
+      # common subexpressions, similar to what normal JAX compilation does.
+      # This eliminates duplicate computations that may arise from
+      # rematerialization or repeated operations.
+      optimization_pipeline = PassManager.parse(
+          "builtin.module(cse,canonicalize)"
+      )
+      optimization_pipeline.run(module_op)
+
+      # Serialize the optimized module
       pipeline = PassManager.parse(
           "builtin.module(mosaic-serde{serialize=true " + target_version + "})"
       )
