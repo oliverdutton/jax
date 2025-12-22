@@ -764,16 +764,25 @@ def _run_serde_pass(
       module.operation.get_asm(binary=True, enable_debug_info=True),
       context=module.context,
   )
-  pipeline = passmanager.PassManager.parse(
-      "builtin.module(mosaic_gpu-serde{serialize="
-      + str(serialize).lower()
-      + (f" target-version={ir_version}" if ir_version is not None else "")
-      + "})",
-      module.context,
-  )
   allow_unregistered_dialects = module.context.allow_unregistered_dialects
   module.context.allow_unregistered_dialects = True
   try:
+    # Run CSE and canonicalize passes before serialization to deduplicate
+    # common subexpressions, similar to what normal JAX compilation does.
+    optimization_pipeline = passmanager.PassManager.parse(
+        "builtin.module(cse,canonicalize)",
+        module.context,
+    )
+    optimization_pipeline.run(module.operation)
+
+    # Serialize the optimized module
+    pipeline = passmanager.PassManager.parse(
+        "builtin.module(mosaic_gpu-serde{serialize="
+        + str(serialize).lower()
+        + (f" target-version={ir_version}" if ir_version is not None else "")
+        + "})",
+        module.context,
+    )
     pipeline.run(module.operation)
     module.operation.verify()
   finally:
