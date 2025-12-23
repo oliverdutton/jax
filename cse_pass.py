@@ -1,6 +1,6 @@
 
 import jax
-from jax._src.core import Jaxpr, Var, JaxprEqn, ClosedJaxpr, Literal
+from jax.extend.core import Jaxpr, Var, JaxprEqn, ClosedJaxpr, Literal
 from collections import Counter
 import hashlib
 
