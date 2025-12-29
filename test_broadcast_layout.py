@@ -72,28 +72,70 @@ def take_along_axis_arrays(val, idx, axis):
     )[:shape[0], :shape[1]]
 
 
-def reproducer_kernel(topk_logits_ref, p_ref, out_ref):
-    topk_logits = topk_logits_ref[...]
-    p = p_ref[...]
-    shape = topk_logits.shape
+def make_reproducer_kernel(method: int):
+    """Create reproducer kernel with specified broadcast method.
 
-    cumsum_probs = topk_logits  # skip for reproducer
+    Args:
+        method: 0 = original broadcast (fails)
+                1 = reshape workaround
+                2 = pltpu.repeat workaround
+                3 = jnp.tile workaround
+    """
+    def reproducer_kernel(topk_logits_ref, p_ref, out_ref):
+        topk_logits = topk_logits_ref[...]
+        p = p_ref[...]
+        shape = topk_logits.shape
+        n, b = shape
 
-    threshold_idx = (cumsum_probs < p[None, :]).sum(0, keepdims=True)
-    threshold_idx = jnp.where(p[None, :] == 1., shape[0] - 1, threshold_idx)
+        cumsum_probs = topk_logits  # skip for reproducer
 
-    # This broadcast is the problematic one
-    thresholds = take_along_axis_arrays(
-        topk_logits, jnp.broadcast_to(threshold_idx, shape), 0)
+        threshold_idx = (cumsum_probs < p[None, :]).sum(0, keepdims=True)
+        threshold_idx = jnp.where(p[None, :] == 1., shape[0] - 1, threshold_idx)
 
-    topp_logits = jnp.where(
-        topk_logits >= thresholds,
-        topk_logits, -1e12)
-    out_ref[...] = topp_logits
+        # Broadcast using specified method
+        if method == 0:
+            # Original: direct broadcast (fails for some shapes)
+            broadcasted_idx = jnp.broadcast_to(threshold_idx, shape)
+
+        elif method == 1:
+            # Workaround 1: reshape pattern
+            broadcasted_idx = jnp.broadcast_to(threshold_idx, shape)
+            if n % 8 == 0 and b % 128 == 0 and b > 128:
+                # Retile to avoid bug
+                reshaped = broadcasted_idx.reshape(8, n // 8, b)
+                broadcasted_idx = reshaped.reshape(n, b)
+
+        elif method == 2:
+            # Workaround 2: pltpu.repeat
+            broadcasted_idx = pltpu.repeat(threshold_idx, n, axis=0)
+
+        elif method == 3:
+            # Workaround 3: jnp.tile
+            broadcasted_idx = jnp.tile(threshold_idx, (n, 1))
+
+        else:
+            raise ValueError(f"Invalid method: {method}")
+
+        thresholds = take_along_axis_arrays(
+            topk_logits, broadcasted_idx, 0)
+
+        topp_logits = jnp.where(
+            topk_logits >= thresholds,
+            topk_logits, -1e12)
+        out_ref[...] = topp_logits
+
+    return reproducer_kernel
 
 
-def call_reproducer_kernel(topk_logits, p):
-    """Pallas call wrapper for the reproducer kernel."""
+def call_reproducer_kernel(topk_logits, p, method=0):
+    """Pallas call wrapper for the reproducer kernel.
+
+    Args:
+        method: 0 = original broadcast (fails)
+                1 = reshape workaround
+                2 = pltpu.repeat workaround
+                3 = jnp.tile workaround
+    """
     n, b = topk_logits.shape
 
     out_shape = jax.ShapeDtypeStruct(
@@ -101,16 +143,28 @@ def call_reproducer_kernel(topk_logits, p):
         dtype=topk_logits.dtype
     )
 
+    kernel = make_reproducer_kernel(method)
     result = pl.pallas_call(
-        reproducer_kernel,
+        kernel,
         out_shape=out_shape
     )(topk_logits, p)
 
     return result
 
 
-def test_case(n, b, label="test"):
-    """Test a specific case and dump IR."""
+def test_case(n, b, label="test", method=None):
+    """Test a specific case and dump IR.
+
+    Args:
+        method: If None, test all methods. Otherwise test specific method 0-3.
+    """
+    method_names = {
+        0: "Original broadcast (baseline)",
+        1: "Reshape workaround",
+        2: "pltpu.repeat workaround",
+        3: "jnp.tile workaround",
+    }
+
     print(f"\n{'='*60}")
     print(f"Testing {label}: (n, b) = ({n}, {b})")
     print(f"{'='*60}")
@@ -118,37 +172,51 @@ def test_case(n, b, label="test"):
     key = jax.random.PRNGKey(42)
     key1, key2 = jax.random.split(key)
 
+    # Create inputs ONCE for all methods
     topk_logits = jax.random.normal(key1, (n, b))
     p = jax.random.uniform(key2, (b,), minval=0.0, maxval=1.0)
 
-    try:
-        # Compile and dump IR
-        compiled = jit(call_reproducer_kernel).lower(topk_logits, p)
-        print(f"✓ Successfully lowered!")
+    # Test specified method(s)
+    methods_to_test = [method] if method is not None else [0, 1, 2, 3]
 
-        # Try to compile
-        compiled_fn = compiled.compile()
-        print(f"✓ Successfully compiled!")
-        return True
+    for m in methods_to_test:
+        method_name = method_names[m]
+        print(f"\n{m}. Testing {method_name}...")
 
-    except Exception as e:
-        print(f"✗ Failed with error:")
-        print(f"  {type(e).__name__}: {str(e)}")
-        return False
+        try:
+            # Compile and dump IR
+            compiled = jit(functools.partial(call_reproducer_kernel, method=m)).lower(topk_logits, p)
+            print(f"   ✓ Lowered successfully!")
+
+            # Try to compile
+            compiled_fn = compiled.compile()
+            print(f"   ✓ Compiled successfully!")
+
+        except Exception as e:
+            error_msg = str(e)
+            if "Invalid input layout" in error_msg:
+                if m == 0:
+                    print(f"   ✗ Failed with layout bug (expected for some shapes)")
+                else:
+                    print(f"   ✗ Also failed with layout bug")
+            else:
+                print(f"   ✗ Failed: {type(e).__name__}")
+                if len(error_msg) > 0:
+                    print(f"      {error_msg[:150]}")
+
+    return True
 
 
 if __name__ == "__main__":
-    # Test good cases
+    # Test good case (should pass with all methods)
     print("\n" + "="*60)
-    print("GOOD CASES")
+    print("GOOD CASE - All methods should succeed")
     print("="*60)
     test_case(128, 128, "GOOD: 128x128")
-    test_case(128, 193, "GOOD: 128x193")
-    test_case(137, 256, "GOOD: 137x256 (padded)")
 
-    # Test bad cases
+    # Test bad cases (method 0 should fail, workarounds might succeed)
     print("\n" + "="*60)
-    print("BAD CASES")
+    print("BAD CASES - Method 0 should fail, testing workarounds")
     print("="*60)
     test_case(128, 256, "BAD: 128x256")
     test_case(128, 384, "BAD: 128x384")
