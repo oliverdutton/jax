@@ -42,7 +42,7 @@ def workaround_broadcast(value, target_shape):
 - Different tile structure avoids the specific pattern that triggers the bug
 - JAX optimizations will likely eliminate the redundant reshapes
 
-## Workaround 2: Use pltpu.repeat
+## Workaround 2: Use pltpu.repeat (Recommended Alternative)
 
 **Available**: `pltpu.repeat(x, repeats, axis)`
 
@@ -53,22 +53,32 @@ Instead of `jnp.broadcast_to()`, use `pltpu.repeat()`:
 broadcasted = jnp.broadcast_to(threshold_idx, (n, b))  # May fail
 
 # Use:
-broadcasted = pltpu.repeat(threshold_idx, n, axis=0)  # May work
+broadcasted = pltpu.repeat(threshold_idx, n, axis=0)  # Should work!
 ```
 
-**Caveat**: `pltpu.repeat` may use the same underlying `vector.broadcast` operation, so this might not always work. Test first.
+**Why this works**:
+- `pltpu.repeat` lowers to `tpu.repeat` MLIR operation on TPU
+- `tpu.repeat` gets canonicalized to `tpu.concatenate` (not broadcast!)
+- Concatenate joins multiple copies without using `vector.broadcast`
+- This avoids the layout offset bug entirely
+- See `PLTPU_REPEAT_ANALYSIS.md` for detailed lowering analysis
 
-## Workaround 3: Use jnp.tile
+## Workaround 3: Use jnp.tile (NOT Recommended - Will Fail)
 
-Similar to repeat, but using standard JAX:
+**WARNING**: This workaround will likely NOT work!
 
 ```python
 # Instead of:
-broadcasted = jnp.broadcast_to(threshold_idx, (n, b))  # May fail
+broadcasted = jnp.broadcast_to(threshold_idx, (n, b))  # Fails
 
-# Use:
-broadcasted = jnp.tile(threshold_idx, (n, 1))  # May work
+# DON'T use:
+broadcasted = jnp.tile(threshold_idx, (n, 1))  # Also fails!
 ```
+
+**Why this fails**:
+- `jnp.tile` is implemented using `broadcast_to` internally (see lax_numpy.py:4528)
+- This means it hits the exact same layout bug
+- Not a viable workaround
 
 ## Workaround 4: Avoid Aligned Shapes
 
@@ -144,14 +154,14 @@ Use the provided `test_broadcast_workarounds.py` script to test which workaround
 python test_broadcast_workarounds.py
 ```
 
-## Why These Work
+## Why These Work (or Don't)
 
-These workarounds succeed by:
+Workaround effectiveness:
 
-1. **Reshape**: Changes the tile structure seen by layout inference, avoiding the specific (8,128) tiling pattern
-2. **pltpu.repeat**: Different primitive with potentially different layout rules
-3. **jnp.tile**: Different lowering path that may avoid the bug
-4. **Non-aligned shapes**: Padding changes the tiling calculation, avoiding offset 128
+1. **Reshape** ✅: Changes the tile structure seen by layout inference, avoiding the specific (8,128) tiling pattern
+2. **pltpu.repeat** ✅: Lowers to `tpu.repeat` → `tpu.concatenate` (joins copies without broadcast), completely avoids the bug
+3. **jnp.tile** ❌: Uses `broadcast_to` internally, hits the same bug - NOT a viable workaround
+4. **Non-aligned shapes** ✅: Padding changes the tiling calculation, avoiding offset 128
 
 ## Limitations
 
