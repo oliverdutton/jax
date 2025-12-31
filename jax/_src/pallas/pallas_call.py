@@ -1116,6 +1116,13 @@ def _pallas_call_lowering(
   def cpu_lowering(ctx: mlir.LoweringRuleContext,
                    *in_nodes: mlir.ir.Value | Sequence[mlir.ir.Value],
                    **params):
+    # Allow TPU code to lower (but not compile) on CPU backend
+    if backend == "mosaic_tpu":
+      if mosaic_tpu_backend is None:
+        raise _unsupported_lowering_error("tpu")
+      return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
+          ctx, *in_nodes, **params
+      )
     raise ValueError("Only interpret mode is supported on CPU backend.")
 
   def tpu_lowering(ctx: mlir.LoweringRuleContext,
