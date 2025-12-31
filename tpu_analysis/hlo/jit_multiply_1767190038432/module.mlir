@@ -1,0 +1,18 @@
+#loc1 = loc("x")
+#loc2 = loc("y")
+module @jit_multiply attributes {mhlo.num_partitions = 1 : i32, mhlo.num_replicas = 1 : i32} {
+  func.func public @main(%arg0: tensor<64x32xf32> loc("x"), %arg1: tensor<f32> loc("y")) -> (tensor<64x32xf32> {jax.result_info = "result"}) {
+    %0 = stablehlo.convert %arg1 : tensor<f32> loc(#loc8)
+    %1 = stablehlo.broadcast_in_dim %0, dims = [] : (tensor<f32>) -> tensor<64x32xf32> loc(#loc9)
+    %2 = stablehlo.multiply %arg0, %1 : tensor<64x32xf32> loc(#loc9)
+    return %2 : tensor<64x32xf32> loc(#loc)
+  } loc(#loc)
+} loc(#loc)
+#loc = loc(unknown)
+#loc3 = loc("/home/user/jax/analyze_tpu_compilation.py":328:9 to :53)
+#loc4 = loc("/home/user/jax/analyze_tpu_compilation.py":379:4 to :10)
+#loc5 = loc("main"(#loc3))
+#loc6 = loc("<module>"(#loc4))
+#loc7 = loc(callsite(#loc5 at #loc6))
+#loc8 = loc("jit(multiply)/convert_element_type"(#loc7))
+#loc9 = loc("jit(multiply)/mul"(#loc7))

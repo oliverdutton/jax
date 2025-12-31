@@ -1,0 +1,661 @@
+BufferAssignment:
+allocation 0: size 4, constant:
+ value: <116 constant.23 @0> (size=4,offset=0): s32[]
+allocation 1: size 24, output shape is |u32[3,2]|, maybe-live-out:
+ value: <130 copy.22 @0> (size=16,offset=0): u32[4]{0}
+ value: <147 copy.25 @0> (size=16,offset=0): u32[4]{0}
+ value: <151 bitcast_concatenate_fusion @0> (size=24,offset=0): u32[3,2]{1,0}
+ value: <160 arg_tuple.5{6} (phi) @0> (size=16,offset=0): u32[4]{0}
+ value: <168 arg_tuple.6{6} (phi) @0> (size=16,offset=0): u32[4]{0}
+ value: <177 while.6{6} (phi) @0> (size=16,offset=0): u32[4]{0}
+allocation 2: size 16, constant:
+ value: <146 constant.4 @0> (size=16,offset=0): u32[4]{0}
+allocation 3: size 16, constant:
+ value: <148 constant.5 @0> (size=16,offset=0): u32[4]{0}
+allocation 4: size 8, parameter 0, shape |u32[2]| at ShapeIndex {}:
+ value: <140 key.1 @0> (size=8,offset=0): u32[2]{0}
+allocation 5: size 4, constant:
+ value: <138 constant.2 @0> (size=4,offset=0): s32[]
+allocation 6: size 4, constant:
+ value: <136 constant.22 @0> (size=4,offset=0): s32[]
+allocation 7: size 964, preallocated-temp:
+ value: <115 copy.8 @0> (size=4,offset=576): s32[]
+ value: <117 wrapped_add @0> (size=4,offset=768): s32[]
+ value: <118 copy.11 @0> (size=4,offset=640): u32[]
+ value: <119 copy.14 @0> (size=16,offset=64): u32[4]{0}
+ value: <120 copy.10 @0> (size=12,offset=256): u32[3]{0}
+ value: <121 copy.9 @0> (size=12,offset=320): u32[3]{0}
+ value: <122 broadcast_add_fusion.1 @0> (size=12,offset=384): u32[3]{0}
+ value: <123 copy.12 @0> (size=4,offset=512): u32[]
+ value: <124 broadcast_add_fusion @0> (size=12,offset=448): u32[3]{0}
+ value: <125 copy.19 @0> (size=4,offset=832): u32[]
+ value: <126 copy.13 @0> (size=4,offset=704): u32[]
+ value: <127 copy.20 @0> (size=4,offset=896): u32[]
+ value: <128 copy.21 @0> (size=4,offset=960): u32[]
+ value: <129 copy.15 @0> (size=16,offset=128): u32[4]{0}
+ value: <131 copy.23 @0> (size=16,offset=192): u32[4]{0}
+ value: <132 tuple.16{} @0> (size=64,offset=0): (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0})
+ value: <137 wrapped_compare @0> (size=1,offset=64): pred[]
+ value: <139 copy.24 @0> (size=4,offset=768): s32[]
+ value: <141 broadcast_add_fusion.3 @0> (size=12,offset=384): u32[3]{0}
+ value: <142 broadcast_add_fusion.2 @0> (size=12,offset=448): u32[3]{0}
+ value: <143 slice_bitcast_fusion @0> (size=4,offset=832): u32[]
+ value: <144 xor_xor_fusion @0> (size=4,offset=896): u32[]
+ value: <145 slice_bitcast_fusion.1 @0> (size=4,offset=960): u32[]
+ value: <149 copy.26 @0> (size=16,offset=192): u32[4]{0}
+ value: <150 tuple.14{} @0> (size=64,offset=0): (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0})
+ value: <152 arg_tuple.5{} (phi) @0> (size=64,offset=0): (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0})
+ value: <153 arg_tuple.6{} (phi) @0> (size=64,offset=0): (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0})
+ value: <154 arg_tuple.5{0} (phi) @0> (size=4,offset=768): s32[]
+ value: <155 arg_tuple.5{1} (phi) @0> (size=12,offset=384): u32[3]{0}
+ value: <156 arg_tuple.5{2} (phi) @0> (size=12,offset=448): u32[3]{0}
+ value: <157 arg_tuple.5{3} (phi) @0> (size=4,offset=832): u32[]
+ value: <158 arg_tuple.5{4} (phi) @0> (size=4,offset=896): u32[]
+ value: <159 arg_tuple.5{5} (phi) @0> (size=4,offset=960): u32[]
+ value: <161 arg_tuple.5{7} (phi) @0> (size=16,offset=192): u32[4]{0}
+ value: <162 arg_tuple.6{0} (phi) @0> (size=4,offset=768): s32[]
+ value: <163 arg_tuple.6{1} (phi) @0> (size=12,offset=384): u32[3]{0}
+ value: <164 arg_tuple.6{2} (phi) @0> (size=12,offset=448): u32[3]{0}
+ value: <165 arg_tuple.6{3} (phi) @0> (size=4,offset=832): u32[]
+ value: <166 arg_tuple.6{4} (phi) @0> (size=4,offset=896): u32[]
+ value: <167 arg_tuple.6{5} (phi) @0> (size=4,offset=960): u32[]
+ value: <169 arg_tuple.6{7} (phi) @0> (size=16,offset=192): u32[4]{0}
+ value: <170 while.6{} (phi) @0> (size=64,offset=0): (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0})
+ value: <171 while.6{0} (phi) @0> (size=4,offset=768): s32[]
+ value: <172 while.6{1} (phi) @0> (size=12,offset=384): u32[3]{0}
+ value: <173 while.6{2} (phi) @0> (size=12,offset=448): u32[3]{0}
+ value: <174 while.6{3} (phi) @0> (size=4,offset=832): u32[]
+ value: <175 while.6{4} (phi) @0> (size=4,offset=896): u32[]
+ value: <176 while.6{5} (phi) @0> (size=4,offset=960): u32[]
+ value: <178 while.6{7} (phi) @0> (size=16,offset=192): u32[4]{0}
+
+Total bytes used: 1040 (1.0KiB)
+
+Used values:
+<115 copy.8 @0>
+ positions:
+  copy.8
+ uses:
+  broadcast_add_fusion, operand 4
+  wrapped_add, operand 0
+ from instruction: %copy.8 = s32[] copy(%get-tuple-element.103)
+<116 constant.23 @0>
+ positions:
+  constant.23
+ uses:
+  wrapped_add, operand 1
+ from instruction: %constant.23 = s32[] constant(1), metadata={op_name="jit(_threefry_split)"}
+<117 wrapped_add @0>
+ positions:
+  wrapped_add
+  tuple.16 {0}
+ uses:
+  tuple.16, operand 0
+ from instruction: %wrapped_add = s32[] fusion(%copy.8, %constant.23), kind=kLoop, calls=%wrapped_add_computation, metadata={op_name="jit(_threefry_split)/while/body/add" stack_frame_id=2}
+<118 copy.11 @0>
+ positions:
+  copy.11
+ uses:
+  broadcast_add_fusion.1, operand 0
+  copy.21, operand 0
+ from instruction: %copy.11 = u32[] copy(%get-tuple-element.106)
+<119 copy.14 @0>
+ positions:
+  copy.14
+ uses:
+  broadcast_add_fusion, operand 1
+  copy.23, operand 0
+  broadcast_add_fusion.1, operand 1
+ from instruction: %copy.14 = u32[4]{0} copy(%get-tuple-element.109)
+<120 copy.10 @0>
+ positions:
+  copy.10
+ uses:
+  broadcast_add_fusion.1, operand 2
+  broadcast_add_fusion, operand 2
+ from instruction: %copy.10 = u32[3]{0} copy(%get-tuple-element.105)
+<121 copy.9 @0>
+ positions:
+  copy.9
+ uses:
+  broadcast_add_fusion, operand 3
+  broadcast_add_fusion.1, operand 3
+ from instruction: %copy.9 = u32[3]{0} copy(%get-tuple-element.104)
+<122 broadcast_add_fusion.1 @0>
+ positions:
+  broadcast_add_fusion.1
+  tuple.16 {1}
+ uses:
+  tuple.16, operand 1
+ from instruction: %broadcast_add_fusion.1 = u32[3]{0} fusion(%copy.11, %copy.14, %copy.10, %copy.9), kind=kLoop, calls=%fused_computation.1, metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+<123 copy.12 @0>
+ positions:
+  copy.12
+ uses:
+  broadcast_add_fusion, operand 0
+  copy.19, operand 0
+ from instruction: %copy.12 = u32[] copy(%get-tuple-element.107)
+<124 broadcast_add_fusion @0>
+ positions:
+  broadcast_add_fusion
+  tuple.16 {2}
+ uses:
+  tuple.16, operand 2
+ from instruction: %broadcast_add_fusion = u32[3]{0} fusion(%copy.12, %copy.14, %copy.10, %copy.9, %copy.8), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+<125 copy.19 @0>
+ positions:
+  copy.19
+  tuple.16 {3}
+ uses:
+  tuple.16, operand 3
+ from instruction: %copy.19 = u32[] copy(%copy.12), control-predecessors={%copy.11}
+<126 copy.13 @0>
+ positions:
+  copy.13
+ uses:
+  copy.20, operand 0
+ from instruction: %copy.13 = u32[] copy(%get-tuple-element.108)
+<127 copy.20 @0>
+ positions:
+  copy.20
+  tuple.16 {4}
+ uses:
+  tuple.16, operand 4
+ from instruction: %copy.20 = u32[] copy(%copy.13), control-predecessors={%copy.12}
+<128 copy.21 @0>
+ positions:
+  copy.21
+  tuple.16 {5}
+ uses:
+  tuple.16, operand 5
+ from instruction: %copy.21 = u32[] copy(%copy.11), control-predecessors={%copy.13}
+<129 copy.15 @0>
+ positions:
+  copy.15
+ uses:
+  copy.22, operand 0
+ from instruction: %copy.15 = u32[4]{0} copy(%get-tuple-element.110)
+<130 copy.22 @0>
+ positions:
+  copy.22
+  tuple.16 {6}
+ uses:
+  tuple.16, operand 6
+ from instruction: %copy.22 = u32[4]{0} copy(%copy.15), control-predecessors={%copy.14}
+<131 copy.23 @0>
+ positions:
+  copy.23
+  tuple.16 {7}
+ uses:
+  tuple.16, operand 7
+ from instruction: %copy.23 = u32[4]{0} copy(%copy.14), control-predecessors={%copy.15}
+<132 tuple.16{} @0>
+ positions:
+  tuple.16 {}
+ uses:
+ from instruction: %tuple.16 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) tuple(%wrapped_add, %broadcast_add_fusion.1, %broadcast_add_fusion, %copy.19, %copy.20, /*index=5*/%copy.21, %copy.22, %copy.23)
+<136 constant.22 @0>
+ positions:
+  constant.22
+ uses:
+  wrapped_compare, operand 1
+ from instruction: %constant.22 = s32[] constant(5), metadata={op_name="jit(_threefry_split)"}
+<137 wrapped_compare @0>
+ positions:
+  wrapped_compare
+ uses:
+ from instruction: %wrapped_compare = pred[] fusion(%get-tuple-element.76, %constant.22), kind=kLoop, calls=%wrapped_compare_computation, metadata={op_name="jit(_threefry_split)/while/cond/lt" stack_frame_id=2}
+<138 constant.2 @0>
+ positions:
+  constant.2
+ uses:
+  copy.24, operand 0
+ from instruction: %constant.2 = s32[] constant(0), metadata={op_name="jit(_threefry_split)"}
+<139 copy.24 @0>
+ positions:
+  copy.24
+  tuple.14 {0}
+  tuple.17 {0}
+ uses:
+  call, operand 0 {0}
+  while.6, operand 0 {0}
+ from instruction: %copy.24 = s32[] copy(%constant.2)
+<140 key.1 @0>
+ positions:
+  key.1
+ uses:
+  slice_bitcast_fusion.1, operand 0
+  slice_bitcast_fusion, operand 0
+  xor_xor_fusion, operand 0
+  broadcast_add_fusion.2, operand 0
+  broadcast_add_fusion.3, operand 0
+ from instruction: %key.1 = u32[2]{0} parameter(0), metadata={op_name="key"}
+<141 broadcast_add_fusion.3 @0>
+ positions:
+  broadcast_add_fusion.3
+  tuple.14 {1}
+  tuple.17 {1}
+ uses:
+  call, operand 0 {1}
+  while.6, operand 0 {1}
+ from instruction: %broadcast_add_fusion.3 = u32[3]{0} fusion(%key.1), kind=kLoop, calls=%fused_computation.6, metadata={op_name="jit(_threefry_split)/add" stack_frame_id=2}
+<142 broadcast_add_fusion.2 @0>
+ positions:
+  broadcast_add_fusion.2
+  tuple.14 {2}
+  tuple.17 {2}
+ uses:
+  call, operand 0 {2}
+  while.6, operand 0 {2}
+ from instruction: %broadcast_add_fusion.2 = u32[3]{0} fusion(%key.1), kind=kLoop, calls=%fused_computation.4, metadata={op_name="jit(_threefry_split)/add" stack_frame_id=2}
+<143 slice_bitcast_fusion @0>
+ positions:
+  slice_bitcast_fusion
+  tuple.14 {3}
+  tuple.17 {3}
+ uses:
+  call, operand 0 {3}
+  while.6, operand 0 {3}
+ from instruction: %slice_bitcast_fusion = u32[] fusion(%key.1), kind=kLoop, calls=%fused_computation.5, metadata={op_name="jit(_threefry_split)/slice" stack_frame_id=2}
+<144 xor_xor_fusion @0>
+ positions:
+  xor_xor_fusion
+  tuple.14 {4}
+  tuple.17 {4}
+ uses:
+  call, operand 0 {4}
+  while.6, operand 0 {4}
+ from instruction: %xor_xor_fusion = u32[] fusion(%key.1), kind=kLoop, calls=%fused_computation.3, metadata={op_name="jit(_threefry_split)/xor" stack_frame_id=2}
+<145 slice_bitcast_fusion.1 @0>
+ positions:
+  slice_bitcast_fusion.1
+  tuple.14 {5}
+  tuple.17 {5}
+ uses:
+  call, operand 0 {5}
+  while.6, operand 0 {5}
+ from instruction: %slice_bitcast_fusion.1 = u32[] fusion(%key.1), kind=kLoop, calls=%fused_computation.7, metadata={op_name="jit(_threefry_split)/slice" stack_frame_id=2}
+<146 constant.4 @0>
+ positions:
+  constant.4
+ uses:
+  copy.25, operand 0
+ from instruction: %constant.4 = u32[4]{0} constant({13, 15, 26, 6}), metadata={op_name="jit(_threefry_split)"}
+<147 copy.25 @0>
+ positions:
+  copy.25
+  tuple.14 {6}
+  tuple.17 {6}
+ uses:
+  call, operand 0 {6}
+  while.6, operand 0 {6}
+ from instruction: %copy.25 = u32[4]{0} copy(%constant.4)
+<148 constant.5 @0>
+ positions:
+  constant.5
+ uses:
+  copy.26, operand 0
+ from instruction: %constant.5 = u32[4]{0} constant({17, 29, 16, 24}), metadata={op_name="jit(_threefry_split)"}
+<149 copy.26 @0>
+ positions:
+  copy.26
+  tuple.14 {7}
+  tuple.17 {7}
+ uses:
+  call, operand 0 {7}
+  while.6, operand 0 {7}
+ from instruction: %copy.26 = u32[4]{0} copy(%constant.5)
+<150 tuple.14{} @0>
+ positions:
+  tuple.14 {}
+  tuple.17 {}
+ uses:
+  call, operand 0 {}
+  while.6, operand 0 {}
+ from instruction: %tuple.14 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) tuple(%copy.24, %broadcast_add_fusion.3, %broadcast_add_fusion.2, %slice_bitcast_fusion, %xor_xor_fusion, /*index=5*/%slice_bitcast_fusion.1, %copy.25, %copy.26)
+<151 bitcast_concatenate_fusion @0>
+ positions:
+  bitcast_concatenate_fusion
+ uses:
+ from instruction: %bitcast_concatenate_fusion = u32[3,2]{1,0} fusion(%jit__threefry_split_.13, %jit__threefry_split_.12), kind=kLoop, calls=%fused_computation.2, metadata={op_name="jit(_threefry_split)/concatenate" stack_frame_id=2}
+<152 arg_tuple.5{} (phi) @0>
+ positions:
+  arg_tuple.5 {}
+ uses:
+  get-tuple-element.76, operand 0 {}
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<153 arg_tuple.6{} (phi) @0>
+ positions:
+  arg_tuple.6 {}
+ uses:
+  get-tuple-element.110, operand 0 {}
+  get-tuple-element.109, operand 0 {}
+  get-tuple-element.108, operand 0 {}
+  get-tuple-element.107, operand 0 {}
+  get-tuple-element.106, operand 0 {}
+  get-tuple-element.105, operand 0 {}
+  get-tuple-element.104, operand 0 {}
+  get-tuple-element.103, operand 0 {}
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<154 arg_tuple.5{0} (phi) @0>
+ positions:
+  arg_tuple.5 {0}
+  get-tuple-element.76
+ uses:
+  wrapped_compare, operand 0
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<155 arg_tuple.5{1} (phi) @0>
+ positions:
+  arg_tuple.5 {1}
+ uses:
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<156 arg_tuple.5{2} (phi) @0>
+ positions:
+  arg_tuple.5 {2}
+ uses:
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<157 arg_tuple.5{3} (phi) @0>
+ positions:
+  arg_tuple.5 {3}
+ uses:
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<158 arg_tuple.5{4} (phi) @0>
+ positions:
+  arg_tuple.5 {4}
+ uses:
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<159 arg_tuple.5{5} (phi) @0>
+ positions:
+  arg_tuple.5 {5}
+ uses:
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<160 arg_tuple.5{6} (phi) @0>
+ positions:
+  arg_tuple.5 {6}
+ uses:
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<161 arg_tuple.5{7} (phi) @0>
+ positions:
+  arg_tuple.5 {7}
+ uses:
+ from instruction: %arg_tuple.5 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<162 arg_tuple.6{0} (phi) @0>
+ positions:
+  arg_tuple.6 {0}
+  get-tuple-element.103
+ uses:
+  copy.8, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<163 arg_tuple.6{1} (phi) @0>
+ positions:
+  arg_tuple.6 {1}
+  get-tuple-element.104
+ uses:
+  copy.9, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<164 arg_tuple.6{2} (phi) @0>
+ positions:
+  arg_tuple.6 {2}
+  get-tuple-element.105
+ uses:
+  copy.10, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<165 arg_tuple.6{3} (phi) @0>
+ positions:
+  arg_tuple.6 {3}
+  get-tuple-element.106
+ uses:
+  copy.11, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<166 arg_tuple.6{4} (phi) @0>
+ positions:
+  arg_tuple.6 {4}
+  get-tuple-element.107
+ uses:
+  copy.12, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<167 arg_tuple.6{5} (phi) @0>
+ positions:
+  arg_tuple.6 {5}
+  get-tuple-element.108
+ uses:
+  copy.13, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<168 arg_tuple.6{6} (phi) @0>
+ positions:
+  arg_tuple.6 {6}
+  get-tuple-element.109
+ uses:
+  copy.14, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<169 arg_tuple.6{7} (phi) @0>
+ positions:
+  arg_tuple.6 {7}
+  get-tuple-element.110
+ uses:
+  copy.15, operand 0
+ from instruction: %arg_tuple.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+<170 while.6{} (phi) @0>
+ positions:
+  while.6 {}
+  call {}
+ uses:
+  jit__threefry_split_.13, operand 0 {}
+  jit__threefry_split_.12, operand 0 {}
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<171 while.6{0} (phi) @0>
+ positions:
+  while.6 {0}
+  call {0}
+ uses:
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<172 while.6{1} (phi) @0>
+ positions:
+  while.6 {1}
+  jit__threefry_split_.12
+  call {1}
+ uses:
+  bitcast_concatenate_fusion, operand 1
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<173 while.6{2} (phi) @0>
+ positions:
+  while.6 {2}
+  jit__threefry_split_.13
+  call {2}
+ uses:
+  bitcast_concatenate_fusion, operand 0
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<174 while.6{3} (phi) @0>
+ positions:
+  while.6 {3}
+  call {3}
+ uses:
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<175 while.6{4} (phi) @0>
+ positions:
+  while.6 {4}
+  call {4}
+ uses:
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<176 while.6{5} (phi) @0>
+ positions:
+  while.6 {5}
+  call {5}
+ uses:
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<177 while.6{6} (phi) @0>
+ positions:
+  while.6 {6}
+  call {6}
+ uses:
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+<178 while.6{7} (phi) @0>
+ positions:
+  while.6 {7}
+  call {7}
+ uses:
+ from instruction: %while.6 = (s32[], u32[3]{0}, u32[3]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) while(%tuple.17), condition=%region_1.3.clone.clone, body=%region_0.2.clone.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}, backend_config={"known_trip_count":{"n":"5"},"known_init_step":{"init":"0","step":"1"},"known_induction_variable":{"tuple_index":"0"},"dynamic_variable_tuple_indices":[]}
+
+
+HloLiveRange (max 50):
+  InstructionSequence:
+    0:key.1
+    1:constant.2
+    2:constant.4
+    3:constant.5
+    4:slice_bitcast_fusion.1
+    5:slice_bitcast_fusion
+    6:xor_xor_fusion
+    7:broadcast_add_fusion.2
+    8:broadcast_add_fusion.3
+    9:copy.24
+    10:copy.25
+    11:copy.26
+    12:tuple.14
+    13:tuple.17
+    14:arg_tuple.5
+    15:constant.22
+    16:get-tuple-element.76
+    17:wrapped_compare
+    18:arg_tuple.6
+    19:constant.23
+    20:get-tuple-element.110
+    21:get-tuple-element.109
+    22:get-tuple-element.108
+    23:get-tuple-element.107
+    24:get-tuple-element.106
+    25:get-tuple-element.105
+    26:get-tuple-element.104
+    27:get-tuple-element.103
+    28:copy.15
+    29:copy.14
+    30:copy.13
+    31:copy.12
+    32:copy.11
+    33:copy.10
+    34:copy.9
+    35:copy.8
+    36:copy.23
+    37:copy.22
+    38:copy.20
+    39:copy.21
+    40:copy.19
+    41:broadcast_add_fusion.1
+    42:broadcast_add_fusion
+    43:wrapped_add
+    44:tuple.16
+    45:while.6
+    46:call
+    47:jit__threefry_split_.13
+    48:jit__threefry_split_.12
+    49:bitcast_concatenate_fusion
+  BufferLiveRange:
+    copy.8{}:35-43
+    constant.23{}:19-43
+    wrapped_add{}:43-45
+    copy.11{}:32-41
+    copy.14{}:29-42
+    copy.10{}:33-42
+    copy.9{}:34-42
+    broadcast_add_fusion.1{}:41-45
+    copy.12{}:31-42
+    broadcast_add_fusion{}:42-45
+    copy.19{}:40-45
+    copy.13{}:30-38
+    copy.20{}:38-45
+    copy.21{}:39-45
+    copy.15{}:28-37
+    copy.22{}:37-45
+    copy.23{}:36-45
+    tuple.16{}:44-45
+    constant.22{}:15-17
+    wrapped_compare{}:17-18
+    constant.2{}:1-9
+    copy.24{}:9-14
+    key.1{}:0-50
+    broadcast_add_fusion.3{}:8-14
+    broadcast_add_fusion.2{}:7-14
+    slice_bitcast_fusion{}:5-14
+    xor_xor_fusion{}:6-14
+    slice_bitcast_fusion.1{}:4-14
+    constant.4{}:2-10
+    copy.25{}:10-14
+    constant.5{}:3-11
+    copy.26{}:11-14
+    tuple.14{}:12-14
+    bitcast_concatenate_fusion{}:49-50
+    arg_tuple.5{}:14-18
+    arg_tuple.6{}:18-27
+    arg_tuple.5{0}:14-18
+    arg_tuple.5{1}:14-18
+    arg_tuple.5{2}:14-18
+    arg_tuple.5{3}:14-18
+    arg_tuple.5{4}:14-18
+    arg_tuple.5{5}:14-18
+    arg_tuple.5{6}:14-18
+    arg_tuple.5{7}:14-18
+    arg_tuple.6{0}:18-35
+    arg_tuple.6{1}:18-34
+    arg_tuple.6{2}:18-33
+    arg_tuple.6{3}:18-32
+    arg_tuple.6{4}:18-31
+    arg_tuple.6{5}:18-30
+    arg_tuple.6{6}:18-29
+    arg_tuple.6{7}:18-28
+    while.6{}:45-48
+    while.6{0}:45-46
+    while.6{1}:45-49
+    while.6{2}:45-49
+    while.6{3}:45-46
+    while.6{4}:45-46
+    while.6{5}:45-46
+    while.6{6}:45-46
+    while.6{7}:45-46
+  Live ranges at 18 (peak):
+    arg_tuple.5{}: 64 bytes (cumulative: 64 bytes)
+    arg_tuple.6{}: 64 bytes (cumulative: 128 bytes)
+    arg_tuple.5{6}: 16 bytes (cumulative: 144 bytes)
+    arg_tuple.5{7}: 16 bytes (cumulative: 160 bytes)
+    arg_tuple.6{6}: 16 bytes (cumulative: 176 bytes)
+    arg_tuple.6{7}: 16 bytes (cumulative: 192 bytes)
+    arg_tuple.5{1}: 12 bytes (cumulative: 204 bytes)
+    arg_tuple.5{2}: 12 bytes (cumulative: 216 bytes)
+    arg_tuple.6{1}: 12 bytes (cumulative: 228 bytes)
+    arg_tuple.6{2}: 12 bytes (cumulative: 240 bytes)
+    key.1{}: 8 bytes (cumulative: 248 bytes)
+    arg_tuple.5{0}: 4 bytes (cumulative: 252 bytes)
+    arg_tuple.5{3}: 4 bytes (cumulative: 256 bytes)
+    arg_tuple.5{4}: 4 bytes (cumulative: 260 bytes)
+    arg_tuple.5{5}: 4 bytes (cumulative: 264 bytes)
+    arg_tuple.6{0}: 4 bytes (cumulative: 268 bytes)
+    arg_tuple.6{3}: 4 bytes (cumulative: 272 bytes)
+    arg_tuple.6{4}: 4 bytes (cumulative: 276 bytes)
+    arg_tuple.6{5}: 4 bytes (cumulative: 280 bytes)
+    wrapped_compare{}: 1 bytes (cumulative: 281 bytes)
+  Stack trace breakdown for peak usage: 281 bytes
+    main.5 (100.0%, total: 281 bytes, current: 0 bytes, remaining: 281 bytes)
+      ├── jit(_threefry_split)/while (97.2%, total: 273 bytes, current: 0 bytes, remaining: 281 bytes)
+      │   └── while.5_computation (97.2%, total: 273 bytes, current: 0 bytes, remaining: 281 bytes)
+      │       └── jit(_threefry_split)/while (97.2%, total: 273 bytes, current: 0 bytes, remaining: 281 bytes)
+      │           ├── region_1.3.clone.clone (48.8%, total: 137 bytes, current: 0 bytes, remaining: 281 bytes)
+      │           │   ├── arg_tuple.5 (22.8%, total: 64 bytes, current: 64 bytes, remaining: 217 bytes)
+      │           │   ├── arg_tuple.5{6} (5.7%, total: 16 bytes, current: 16 bytes, remaining: 201 bytes)
+      │           │   ├── arg_tuple.5{7} (5.7%, total: 16 bytes, current: 16 bytes, remaining: 185 bytes)
+      │           │   ├── arg_tuple.5{1} (4.3%, total: 12 bytes, current: 12 bytes, remaining: 173 bytes)
+      │           │   ├── arg_tuple.5{2} (4.3%, total: 12 bytes, current: 12 bytes, remaining: 161 bytes)
+      │           │   ├── arg_tuple.5{0} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 157 bytes)
+      │           │   ├── arg_tuple.5{3} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 153 bytes)
+      │           │   ├── arg_tuple.5{4} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 149 bytes)
+      │           │   ├── arg_tuple.5{5} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 145 bytes)
+      │           │   └── jit(_threefry_split)/while/cond/lt (0.4%, total: 1 bytes, current: 1 bytes, remaining: 144 bytes)
+      │           └── region_0.2.clone.clone.clone (48.4%, total: 136 bytes, current: 0 bytes, remaining: 144 bytes)
+      │               ├── arg_tuple.6 (22.8%, total: 64 bytes, current: 64 bytes, remaining: 80 bytes)
+      │               ├── arg_tuple.6{6} (5.7%, total: 16 bytes, current: 16 bytes, remaining: 64 bytes)
+      │               ├── arg_tuple.6{7} (5.7%, total: 16 bytes, current: 16 bytes, remaining: 48 bytes)
+      │               ├── arg_tuple.6{1} (4.3%, total: 12 bytes, current: 12 bytes, remaining: 36 bytes)
+      │               ├── arg_tuple.6{2} (4.3%, total: 12 bytes, current: 12 bytes, remaining: 24 bytes)
+      │               ├── arg_tuple.6{0} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 20 bytes)
+      │               ├── arg_tuple.6{3} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 16 bytes)
+      │               ├── arg_tuple.6{4} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 12 bytes)
+      │               └── arg_tuple.6{5} (1.4%, total: 4 bytes, current: 4 bytes, remaining: 8 bytes)
+      └── key (2.8%, total: 8 bytes, current: 8 bytes, remaining: 0 bytes)

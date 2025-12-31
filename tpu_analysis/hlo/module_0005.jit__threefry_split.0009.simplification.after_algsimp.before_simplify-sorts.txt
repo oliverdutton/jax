@@ -1,0 +1,125 @@
+HloModule jit__threefry_split, entry_computation_layout={(u32[2]{0})->u32[3,2]{1,0}}, allow_spmd_sharding_propagation_to_parameters={true}, allow_spmd_sharding_propagation_to_output={true}
+
+FileNames
+1 "/home/user/jax/analyze_tpu_compilation.py"
+
+FunctionNames
+1 "<module>"
+2 "main"
+
+FileLocations
+1 {file_name_id=1 function_name_id=1 line=379 end_line=379 column=4 end_column=10}
+2 {file_name_id=1 function_name_id=2 line=324 end_line=324 column=17 end_column=41}
+
+StackFrames
+1 {file_location_id=1 parent_frame_id=1}
+2 {file_location_id=2 parent_frame_id=2}
+
+
+%region_0.2.clone.clone (arg_tuple.4: (s32[], s32[], u32[3], u32[3], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> (s32[], s32[], u32[3], u32[3], u32[], /*index=5*/u32[], u32[], u32[4], u32[4]) {
+  %arg_tuple.4 = (s32[], s32[], u32[3]{0}, u32[3]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+  %get-tuple-element.43 = s32[] get-tuple-element(%arg_tuple.4), index=0, metadata={op_name="jit(_threefry_split)"}
+  %constant.19 = s32[] constant(1), metadata={op_name="jit(_threefry_split)"}
+  %add.48 = s32[] add(%get-tuple-element.43, %constant.19), metadata={op_name="jit(_threefry_split)/while/body/add" stack_frame_id=2}
+  %get-tuple-element.64 = s32[] get-tuple-element(%arg_tuple.4), index=1
+  %get-tuple-element.45 = u32[3]{0} get-tuple-element(%arg_tuple.4), index=2, metadata={op_name="jit(_threefry_split)"}
+  %get-tuple-element.46 = u32[3]{0} get-tuple-element(%arg_tuple.4), index=3, metadata={op_name="jit(_threefry_split)"}
+  %add.50 = u32[3]{0} add(%get-tuple-element.45, %get-tuple-element.46), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %get-tuple-element.57 = u32[4]{0} get-tuple-element(%arg_tuple.4), index=7, metadata={op_name="jit(_threefry_split)"}
+  %slice.14 = u32[1]{0} slice(%get-tuple-element.57), slice={[0:1]}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.14 = u32[] reshape(%slice.14), metadata={op_name="jit(_threefry_split)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.24 = u32[3]{0} broadcast(%squeeze.14), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.25 = u32[3]{0} shift-left(%get-tuple-element.46, %shift_left.24), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %constant.21 = u32[] constant(32), metadata={op_name="jit(_threefry_split)/while/body/closed_call"}
+  %sub.12 = u32[] subtract(%constant.21, %squeeze.14), metadata={op_name="jit(_threefry_split)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.24 = u32[3]{0} broadcast(%sub.12), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.25 = u32[3]{0} shift-right-logical(%get-tuple-element.46, %shift_right_logical.24), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.12 = u32[3]{0} or(%shift_left.25, %shift_right_logical.25), metadata={op_name="jit(_threefry_split)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.16 = u32[3]{0} xor(%add.50, %or.12), metadata={op_name="jit(_threefry_split)/while/body/closed_call/xor" stack_frame_id=2}
+  %add.51 = u32[3]{0} add(%add.50, %xor.16), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %slice.15 = u32[1]{0} slice(%get-tuple-element.57), slice={[1:2]}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.15 = u32[] reshape(%slice.15), metadata={op_name="jit(_threefry_split)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.26 = u32[3]{0} broadcast(%squeeze.15), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.27 = u32[3]{0} shift-left(%xor.16, %shift_left.26), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %sub.13 = u32[] subtract(%constant.21, %squeeze.15), metadata={op_name="jit(_threefry_split)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.26 = u32[3]{0} broadcast(%sub.13), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.27 = u32[3]{0} shift-right-logical(%xor.16, %shift_right_logical.26), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.13 = u32[3]{0} or(%shift_left.27, %shift_right_logical.27), metadata={op_name="jit(_threefry_split)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.17 = u32[3]{0} xor(%add.51, %or.13), metadata={op_name="jit(_threefry_split)/while/body/closed_call/xor" stack_frame_id=2}
+  %add.52 = u32[3]{0} add(%add.51, %xor.17), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %slice.16 = u32[1]{0} slice(%get-tuple-element.57), slice={[2:3]}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.16 = u32[] reshape(%slice.16), metadata={op_name="jit(_threefry_split)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.28 = u32[3]{0} broadcast(%squeeze.16), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.29 = u32[3]{0} shift-left(%xor.17, %shift_left.28), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %sub.14 = u32[] subtract(%constant.21, %squeeze.16), metadata={op_name="jit(_threefry_split)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.28 = u32[3]{0} broadcast(%sub.14), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.29 = u32[3]{0} shift-right-logical(%xor.17, %shift_right_logical.28), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.14 = u32[3]{0} or(%shift_left.29, %shift_right_logical.29), metadata={op_name="jit(_threefry_split)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.18 = u32[3]{0} xor(%add.52, %or.14), metadata={op_name="jit(_threefry_split)/while/body/closed_call/xor" stack_frame_id=2}
+  %add.53 = u32[3]{0} add(%add.52, %xor.18), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %get-tuple-element.59 = u32[] get-tuple-element(%arg_tuple.4), index=4, metadata={op_name="jit(_threefry_split)"}
+  %add.54 = u32[3]{0} broadcast(%get-tuple-element.59), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %add.55 = u32[3]{0} add(%add.53, %add.54), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %slice.17 = u32[1]{0} slice(%get-tuple-element.57), slice={[3:4]}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.17 = u32[] reshape(%slice.17), metadata={op_name="jit(_threefry_split)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.30 = u32[3]{0} broadcast(%squeeze.17), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.31 = u32[3]{0} shift-left(%xor.18, %shift_left.30), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %sub.15 = u32[] subtract(%constant.21, %squeeze.17), metadata={op_name="jit(_threefry_split)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.30 = u32[3]{0} broadcast(%sub.15), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.31 = u32[3]{0} shift-right-logical(%xor.18, %shift_right_logical.30), metadata={op_name="jit(_threefry_split)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.15 = u32[3]{0} or(%shift_left.31, %shift_right_logical.31), metadata={op_name="jit(_threefry_split)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.19 = u32[3]{0} xor(%add.53, %or.15), metadata={op_name="jit(_threefry_split)/while/body/closed_call/xor" stack_frame_id=2}
+  %get-tuple-element.61 = u32[] get-tuple-element(%arg_tuple.4), index=5, metadata={op_name="jit(_threefry_split)"}
+  %add.56 = u32[3]{0} broadcast(%get-tuple-element.61), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %add.57 = u32[3]{0} add(%xor.19, %add.56), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %get-tuple-element.55 = s32[] get-tuple-element(%arg_tuple.4), index=1
+  %get-tuple-element.54 = s32[] get-tuple-element(%arg_tuple.4), index=0
+  %add.61 = s32[] add(%get-tuple-element.55, %get-tuple-element.54), metadata={op_name="jit(_threefry_split)"}
+  %constant.20 = s32[] constant(1), metadata={op_name="jit(_threefry_split)/while/body/closed_call"}
+  %add.58 = s32[] add(%add.61, %constant.20), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %convert_element_type.3 = u32[] convert(%add.58), metadata={op_name="jit(_threefry_split)/while/body/closed_call/convert_element_type" stack_frame_id=2}
+  %add.59 = u32[3]{0} broadcast(%convert_element_type.3), dimensions={}, metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %add.60 = u32[3]{0} add(%add.57, %add.59), metadata={op_name="jit(_threefry_split)/while/body/closed_call/add" stack_frame_id=2}
+  %get-tuple-element.60 = u32[] get-tuple-element(%arg_tuple.4), index=6, metadata={op_name="jit(_threefry_split)"}
+  %get-tuple-element.58 = u32[4]{0} get-tuple-element(%arg_tuple.4), index=8, metadata={op_name="jit(_threefry_split)"}
+  ROOT %tuple.9 = (s32[], s32[], u32[3]{0}, u32[3]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%add.48, %get-tuple-element.64, %add.55, %add.60, %get-tuple-element.61, /*index=5*/%get-tuple-element.60, %get-tuple-element.59, %get-tuple-element.58, %get-tuple-element.57)
+}
+
+%region_1.3.clone (arg_tuple.2: (s32[], s32[], u32[3], u32[3], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> pred[] {
+  %arg_tuple.2 = (s32[], s32[], u32[3]{0}, u32[3]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+  %get-tuple-element.23 = s32[] get-tuple-element(%arg_tuple.2), index=0, metadata={op_name="jit(_threefry_split)"}
+  %constant.18 = s32[] constant(5), metadata={op_name="jit(_threefry_split)"}
+  ROOT %lt.0 = pred[] compare(%get-tuple-element.23, %constant.18), direction=LT, metadata={op_name="jit(_threefry_split)/while/cond/lt" stack_frame_id=2}
+}
+
+ENTRY %main.5 (key.1: u32[2]) -> u32[3,2] {
+  %constant.2 = s32[] constant(0), metadata={op_name="jit(_threefry_split)"}
+  %iota_2x32_shape.4 = u64[3]{0} iota(), iota_dimension=0, metadata={op_name="jit(_threefry_split)/iota_2x32_shape" stack_frame_id=2}
+  %constant.17 = u64[] constant(32)
+  %broadcast.1 = u64[3]{0} broadcast(%constant.17), dimensions={}
+  %iota_2x32_shape.5 = u64[3]{0} shift-right-logical(%iota_2x32_shape.4, %broadcast.1), metadata={op_name="jit(_threefry_split)/iota_2x32_shape" stack_frame_id=2}
+  %iota_2x32_shape.7 = u32[3]{0} convert(%iota_2x32_shape.5), metadata={op_name="jit(_threefry_split)/iota_2x32_shape" stack_frame_id=2}
+  %key.1 = u32[2]{0} parameter(0), metadata={op_name="key"}
+  %slice.10 = u32[1]{0} slice(%key.1), slice={[0:1]}, metadata={op_name="jit(_threefry_split)/slice" stack_frame_id=2}
+  %squeeze.10 = u32[] reshape(%slice.10), metadata={op_name="jit(_threefry_split)/squeeze" stack_frame_id=2}
+  %add.12 = u32[3]{0} broadcast(%squeeze.10), dimensions={}, metadata={op_name="jit(_threefry_split)/add" stack_frame_id=2}
+  %add.13 = u32[3]{0} add(%iota_2x32_shape.7, %add.12), metadata={op_name="jit(_threefry_split)/add" stack_frame_id=2}
+  %iota_2x32_shape.6 = u32[3]{0} convert(%iota_2x32_shape.4), metadata={op_name="jit(_threefry_split)/iota_2x32_shape" stack_frame_id=2}
+  %slice.11 = u32[1]{0} slice(%key.1), slice={[1:2]}, metadata={op_name="jit(_threefry_split)/slice" stack_frame_id=2}
+  %squeeze.11 = u32[] reshape(%slice.11), metadata={op_name="jit(_threefry_split)/squeeze" stack_frame_id=2}
+  %add.14 = u32[3]{0} broadcast(%squeeze.11), dimensions={}, metadata={op_name="jit(_threefry_split)/add" stack_frame_id=2}
+  %add.15 = u32[3]{0} add(%iota_2x32_shape.6, %add.14), metadata={op_name="jit(_threefry_split)/add" stack_frame_id=2}
+  %xor.4 = u32[] xor(%squeeze.10, %squeeze.11), metadata={op_name="jit(_threefry_split)/xor" stack_frame_id=2}
+  %constant.3 = u32[] constant(466688986), metadata={op_name="jit(_threefry_split)"}
+  %xor.5 = u32[] xor(%xor.4, %constant.3), metadata={op_name="jit(_threefry_split)/xor" stack_frame_id=2}
+  %constant.4 = u32[4]{0} constant({13, 15, 26, 6}), metadata={op_name="jit(_threefry_split)"}
+  %constant.5 = u32[4]{0} constant({17, 29, 16, 24}), metadata={op_name="jit(_threefry_split)"}
+  %while.0 = (s32[], s32[], u32[3]{0}, u32[3]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%constant.2, %constant.2, %add.13, %add.15, %squeeze.11, /*index=5*/%xor.5, %squeeze.10, %constant.4, %constant.5), metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}
+  %while.4 = (s32[], s32[], u32[3]{0}, u32[3]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) while(%while.0), condition=%region_1.3.clone, body=%region_0.2.clone.clone, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}
+  %jit__threefry_split_.12 = u32[3]{0} get-tuple-element(%while.4), index=2, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}
+  %broadcast_in_dim.2 = u32[3,1]{1,0} reshape(%jit__threefry_split_.12), metadata={op_name="jit(_threefry_split)/broadcast_in_dim" stack_frame_id=2}
+  %jit__threefry_split_.13 = u32[3]{0} get-tuple-element(%while.4), index=3, metadata={op_name="jit(_threefry_split)/while" stack_frame_id=2}
+  %broadcast_in_dim.3 = u32[3,1]{1,0} reshape(%jit__threefry_split_.13), metadata={op_name="jit(_threefry_split)/broadcast_in_dim" stack_frame_id=2}
+  ROOT %concatenate.1 = u32[3,2]{1,0} concatenate(%broadcast_in_dim.2, %broadcast_in_dim.3), dimensions={1}, metadata={op_name="jit(_threefry_split)/concatenate" stack_frame_id=2}
+}
+

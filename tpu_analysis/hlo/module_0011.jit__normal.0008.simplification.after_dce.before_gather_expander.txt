@@ -1,0 +1,240 @@
+HloModule jit__normal, entry_computation_layout={(u32[2]{0})->f32[64,64]{1,0}}, allow_spmd_sharding_propagation_to_parameters={true}, allow_spmd_sharding_propagation_to_output={true}, frontend_attributes={xla.sdy.meshes={empty_mesh = #sdy.mesh<[]>}}
+
+FileNames
+1 "/home/user/jax/analyze_tpu_compilation.py"
+
+FunctionNames
+1 "<module>"
+2 "main"
+
+FileLocations
+1 {file_name_id=1 function_name_id=1 line=379 end_line=379 column=4 end_column=10}
+2 {file_name_id=1 function_name_id=2 line=327 end_line=327 column=9 end_column=45}
+
+StackFrames
+1 {file_location_id=1 parent_frame_id=1}
+2 {file_location_id=2 parent_frame_id=2}
+
+
+%region_0.2 (arg_tuple.1: (s32[], s32[], u32[64,64], u32[64,64], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> (s32[], s32[], u32[64,64], u32[64,64], u32[], /*index=5*/u32[], u32[], u32[4], u32[4]) {
+  %arg_tuple.1 = (s32[], s32[], u32[64,64]{1,0}, u32[64,64]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %get-tuple-element.9 = s32[] get-tuple-element(%arg_tuple.1), index=0, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %constant.40 = s32[] constant(1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %add.29 = s32[] add(%get-tuple-element.9, %constant.40), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/add" stack_frame_id=2}
+  %get-tuple-element.10 = s32[] get-tuple-element(%arg_tuple.1), index=1, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %constant.0 = s32[] constant(1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call"}
+  %add.0 = s32[] add(%get-tuple-element.10, %constant.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %get-tuple-element.11 = u32[64,64]{1,0} get-tuple-element(%arg_tuple.1), index=2, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %get-tuple-element.12 = u32[64,64]{1,0} get-tuple-element(%arg_tuple.1), index=3, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %add.1 = u32[64,64]{1,0} add(%get-tuple-element.11, %get-tuple-element.12), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %closed_call.17 = u32[4]{0} get-tuple-element(%arg_tuple.1), index=7, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %slice.0 = u32[1]{0} slice(%closed_call.17), slice={[0:1]}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.0 = u32[] reshape(%slice.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.0 = u32[64,64]{1,0} broadcast(%squeeze.0), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.1 = u32[64,64]{1,0} shift-left(%get-tuple-element.12, %shift_left.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %constant.1 = u32[] constant(32), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call"}
+  %sub.0 = u32[] subtract(%constant.1, %squeeze.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.0 = u32[64,64]{1,0} broadcast(%sub.0), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.1 = u32[64,64]{1,0} shift-right-logical(%get-tuple-element.12, %shift_right_logical.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.0 = u32[64,64]{1,0} or(%shift_left.1, %shift_right_logical.1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.0 = u32[64,64]{1,0} xor(%add.1, %or.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/xor" stack_frame_id=2}
+  %add.2 = u32[64,64]{1,0} add(%add.1, %xor.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %slice.1 = u32[1]{0} slice(%closed_call.17), slice={[1:2]}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.1 = u32[] reshape(%slice.1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.2 = u32[64,64]{1,0} broadcast(%squeeze.1), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.3 = u32[64,64]{1,0} shift-left(%xor.0, %shift_left.2), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %sub.1 = u32[] subtract(%constant.1, %squeeze.1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.2 = u32[64,64]{1,0} broadcast(%sub.1), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.3 = u32[64,64]{1,0} shift-right-logical(%xor.0, %shift_right_logical.2), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.1 = u32[64,64]{1,0} or(%shift_left.3, %shift_right_logical.3), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.1 = u32[64,64]{1,0} xor(%add.2, %or.1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/xor" stack_frame_id=2}
+  %add.3 = u32[64,64]{1,0} add(%add.2, %xor.1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %slice.2 = u32[1]{0} slice(%closed_call.17), slice={[2:3]}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.2 = u32[] reshape(%slice.2), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.4 = u32[64,64]{1,0} broadcast(%squeeze.2), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.5 = u32[64,64]{1,0} shift-left(%xor.1, %shift_left.4), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %sub.2 = u32[] subtract(%constant.1, %squeeze.2), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.4 = u32[64,64]{1,0} broadcast(%sub.2), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.5 = u32[64,64]{1,0} shift-right-logical(%xor.1, %shift_right_logical.4), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.2 = u32[64,64]{1,0} or(%shift_left.5, %shift_right_logical.5), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.2 = u32[64,64]{1,0} xor(%add.3, %or.2), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/xor" stack_frame_id=2}
+  %add.4 = u32[64,64]{1,0} add(%add.3, %xor.2), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %closed_call.15 = u32[] get-tuple-element(%arg_tuple.1), index=4, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %add.5 = u32[64,64]{1,0} broadcast(%closed_call.15), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %add.6 = u32[64,64]{1,0} add(%add.4, %add.5), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %slice.3 = u32[1]{0} slice(%closed_call.17), slice={[3:4]}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/slice" stack_frame_id=2}
+  %squeeze.3 = u32[] reshape(%slice.3), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/squeeze" stack_frame_id=2}
+  %shift_left.6 = u32[64,64]{1,0} broadcast(%squeeze.3), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %shift_left.7 = u32[64,64]{1,0} shift-left(%xor.2, %shift_left.6), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_left" stack_frame_id=2}
+  %sub.3 = u32[] subtract(%constant.1, %squeeze.3), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/sub" stack_frame_id=2}
+  %shift_right_logical.6 = u32[64,64]{1,0} broadcast(%sub.3), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.7 = u32[64,64]{1,0} shift-right-logical(%xor.2, %shift_right_logical.6), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/shift_right_logical" stack_frame_id=2}
+  %or.3 = u32[64,64]{1,0} or(%shift_left.7, %shift_right_logical.7), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/or" stack_frame_id=2}
+  %xor.3 = u32[64,64]{1,0} xor(%add.4, %or.3), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/xor" stack_frame_id=2}
+  %closed_call.13 = u32[] get-tuple-element(%arg_tuple.1), index=5, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %add.7 = u32[64,64]{1,0} broadcast(%closed_call.13), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %add.8 = u32[64,64]{1,0} add(%xor.3, %add.7), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %add.9 = s32[] add(%get-tuple-element.10, %constant.0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %convert_element_type.0 = u32[] convert(%add.9), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/convert_element_type" stack_frame_id=2}
+  %add.10 = u32[64,64]{1,0} broadcast(%convert_element_type.0), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %add.11 = u32[64,64]{1,0} add(%add.8, %add.10), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/body/closed_call/add" stack_frame_id=2}
+  %closed_call.14 = u32[] get-tuple-element(%arg_tuple.1), index=6, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %closed_call.16 = u32[4]{0} get-tuple-element(%arg_tuple.1), index=8, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  ROOT %tuple.3 = (s32[], s32[], u32[64,64]{1,0}, u32[64,64]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%add.29, %add.0, %add.6, %add.11, %closed_call.13, /*index=5*/%closed_call.14, %closed_call.15, %closed_call.16, %closed_call.17), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+}
+
+%region_1.3 (arg_tuple.3: (s32[], s32[], u32[64,64], u32[64,64], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> pred[] {
+  %arg_tuple.3 = (s32[], s32[], u32[64,64]{1,0}, u32[64,64]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %get-tuple-element.27 = s32[] get-tuple-element(%arg_tuple.3), index=0, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %constant.42 = s32[] constant(5), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  ROOT %lt.1 = pred[] compare(%get-tuple-element.27, %constant.42), direction=LT, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while/cond/lt" stack_frame_id=2}
+}
+
+ENTRY %main.7 (key.1: u32[2]) -> f32[64,64] {
+  %constant.15 = f32[] constant(-0.99999994), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %max.10 = f32[64,64]{1,0} broadcast(%constant.15), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/max" stack_frame_id=2}
+  %constant.16 = s32[] constant(0), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %iota_2x32_shape.22 = u64[64]{0} iota(), iota_dimension=0, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %constant.17 = u64[] constant(64), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %broadcast = u64[64]{0} broadcast(%constant.17), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %iota_2x32_shape.33 = u64[64]{0} multiply(%iota_2x32_shape.22, %broadcast), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %broadcast.1 = u64[64,64]{1,0} broadcast(%iota_2x32_shape.33), dimensions={0}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %iota = u64[64,64]{1,0} iota(), iota_dimension=1, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %iota_2x32_shape.28 = u64[64,64]{1,0} add(%broadcast.1, %iota), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %constant.18 = u64[] constant(32), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %iota_2x32_shape.29 = u64[64,64]{1,0} broadcast(%constant.18), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %iota_2x32_shape.30 = u64[64,64]{1,0} shift-right-logical(%iota_2x32_shape.28, %iota_2x32_shape.29), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %iota_2x32_shape.31 = u32[64,64]{1,0} convert(%iota_2x32_shape.30), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %key.1 = u32[2]{0} parameter(0), metadata={op_name="key"}
+  %slice.12 = u32[1]{0} slice(%key.1), slice={[0:1]}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/slice" stack_frame_id=2}
+  %squeeze.12 = u32[] reshape(%slice.12), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/squeeze" stack_frame_id=2}
+  %add.45 = u32[64,64]{1,0} broadcast(%squeeze.12), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/add" stack_frame_id=2}
+  %add.46 = u32[64,64]{1,0} add(%iota_2x32_shape.31, %add.45), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/add" stack_frame_id=2}
+  %iota_2x32_shape.32 = u32[64,64]{1,0} convert(%iota_2x32_shape.28), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/iota_2x32_shape" stack_frame_id=2}
+  %slice.13 = u32[1]{0} slice(%key.1), slice={[1:2]}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/slice" stack_frame_id=2}
+  %squeeze.13 = u32[] reshape(%slice.13), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/squeeze" stack_frame_id=2}
+  %add.47 = u32[64,64]{1,0} broadcast(%squeeze.13), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/add" stack_frame_id=2}
+  %add.48 = u32[64,64]{1,0} add(%iota_2x32_shape.32, %add.47), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/add" stack_frame_id=2}
+  %xor.16 = u32[] xor(%squeeze.12, %squeeze.13), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/xor" stack_frame_id=2}
+  %constant.19 = u32[] constant(466688986), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %xor.17 = u32[] xor(%xor.16, %constant.19), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/xor" stack_frame_id=2}
+  %constant.20 = u32[4]{0} constant({13, 15, 26, 6}), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %constant.21 = u32[4]{0} constant({17, 29, 16, 24}), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %while.8 = (s32[], s32[], u32[64,64]{1,0}, u32[64,64]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%constant.16, %constant.16, %add.46, %add.48, %squeeze.13, /*index=5*/%xor.17, %squeeze.12, %constant.20, %constant.21), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while" stack_frame_id=2}
+  %while.9 = (s32[], s32[], u32[64,64]{1,0}, u32[64,64]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) while(%while.8), condition=%region_1.3, body=%region_0.2, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while" stack_frame_id=2}
+  %get-tuple-element.2 = u32[64,64]{1,0} get-tuple-element(%while.9), index=2, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while" stack_frame_id=2}
+  %get-tuple-element.3 = u32[64,64]{1,0} get-tuple-element(%while.9), index=3, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/while" stack_frame_id=2}
+  %xor.18 = u32[64,64]{1,0} xor(%get-tuple-element.2, %get-tuple-element.3), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/xor" stack_frame_id=2}
+  %constant.22 = u32[] constant(9), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %shift_right_logical.20 = u32[64,64]{1,0} broadcast(%constant.22), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/shift_right_logical" stack_frame_id=2}
+  %shift_right_logical.21 = u32[64,64]{1,0} shift-right-logical(%xor.18, %shift_right_logical.20), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/shift_right_logical" stack_frame_id=2}
+  %constant.23 = u32[] constant(1065353216), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %or.12 = u32[64,64]{1,0} broadcast(%constant.23), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/or" stack_frame_id=2}
+  %or.13 = u32[64,64]{1,0} or(%shift_right_logical.21, %or.12), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/or" stack_frame_id=2}
+  %bitcast_convert_type.2 = f32[64,64]{1,0} bitcast-convert(%or.13), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/bitcast_convert_type" stack_frame_id=2}
+  %constant.24 = f32[] constant(1), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %negate = f32[] negate(%constant.24), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %broadcast.2 = f32[64,64]{1,0} broadcast(%negate), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)"}
+  %add.53 = f32[64,64]{1,0} add(%bitcast_convert_type.2, %broadcast.2), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/sub" stack_frame_id=2}
+  %constant.25 = f32[] constant(1), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %broadcast_in_dim.5 = f32[1,1]{1,0} reshape(%constant.25), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/broadcast_in_dim" stack_frame_id=2}
+  %broadcast_in_dim.4 = f32[1,1]{1,0} reshape(%constant.15), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/broadcast_in_dim" stack_frame_id=2}
+  %sub.16 = f32[1,1]{1,0} subtract(%broadcast_in_dim.5, %broadcast_in_dim.4), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/sub" stack_frame_id=2}
+  %mul.9 = f32[] reshape(%sub.16), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/mul" stack_frame_id=2}
+  %mul.12 = f32[64,64]{1,0} broadcast(%mul.9), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/mul" stack_frame_id=2}
+  %mul.13 = f32[64,64]{1,0} multiply(%add.53, %mul.12), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/mul" stack_frame_id=2}
+  %add.51 = f32[64,64]{1,0} broadcast(%constant.15), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/add" stack_frame_id=2}
+  %add.52 = f32[64,64]{1,0} add(%mul.13, %add.51), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/add" stack_frame_id=2}
+  %max.11 = f32[64,64]{1,0} maximum(%max.10, %add.52), metadata={op_name="jit(_normal)/jit(_normal_real)/jit(_uniform)/max" stack_frame_id=2}
+  %erf_inv.0 = f32[64,64]{1,0} abs(%max.11), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.26 = f32[] constant(1), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.1 = f32[64,64]{1,0} broadcast(%constant.26), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.2 = pred[64,64]{1,0} compare(%erf_inv.0, %erf_inv.1), direction=EQ, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.27 = f32[] constant(inf), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.3 = f32[64,64]{1,0} broadcast(%constant.27), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.4 = f32[64,64]{1,0} multiply(%max.11, %erf_inv.3), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.5 = f32[64,64]{1,0} negate(%max.11), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.6 = f32[64,64]{1,0} multiply(%max.11, %erf_inv.5), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.7 = f32[64,64]{1,0} log-plus-one(%erf_inv.6), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.8 = f32[64,64]{1,0} negate(%erf_inv.7), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.28 = f32[] constant(5), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.9 = f32[64,64]{1,0} broadcast(%constant.28), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.10 = pred[64,64]{1,0} compare(%erf_inv.8, %erf_inv.9), direction=LT, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.29 = f32[] constant(1.50140941), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.11 = f32[64,64]{1,0} broadcast(%constant.29), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.30 = f32[] constant(2.83297682), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.12 = f32[64,64]{1,0} broadcast(%constant.30), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.13 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.11, %erf_inv.12), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.31 = f32[] constant(0.246640727), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.14 = f32[64,64]{1,0} broadcast(%constant.31), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.32 = f32[] constant(1.00167406), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.15 = f32[64,64]{1,0} broadcast(%constant.32), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.16 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.14, %erf_inv.15), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.33 = f32[] constant(-0.00417768164), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.17 = f32[64,64]{1,0} broadcast(%constant.33), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.34 = f32[] constant(0.00943887047), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.18 = f32[64,64]{1,0} broadcast(%constant.34), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.19 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.17, %erf_inv.18), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.35 = f32[] constant(-0.00125372503), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.20 = f32[64,64]{1,0} broadcast(%constant.35), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.36 = f32[] constant(-0.0076224613), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.21 = f32[64,64]{1,0} broadcast(%constant.36), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.22 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.20, %erf_inv.21), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.37 = f32[] constant(0.00021858087), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.23 = f32[64,64]{1,0} broadcast(%constant.37), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.41 = f32[] constant(0.00573950773), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.24 = f32[64,64]{1,0} broadcast(%constant.41), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.25 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.23, %erf_inv.24), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.78 = f32[] constant(-4.39150654e-06), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.26 = f32[64,64]{1,0} broadcast(%constant.78), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.79 = f32[] constant(-0.00367342844), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.27 = f32[64,64]{1,0} broadcast(%constant.79), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.28 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.26, %erf_inv.27), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.80 = f32[] constant(-3.5233877e-06), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.29 = f32[64,64]{1,0} broadcast(%constant.80), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.81 = f32[] constant(0.00134934322), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.30 = f32[64,64]{1,0} broadcast(%constant.81), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.31 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.29, %erf_inv.30), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.82 = f32[] constant(3.43273939e-07), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.32 = f32[64,64]{1,0} broadcast(%constant.82), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.83 = f32[] constant(0.000100950558), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.33 = f32[64,64]{1,0} broadcast(%constant.83), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.34 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.32, %erf_inv.33), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.84 = f32[] constant(2.81022636e-08), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.35 = f32[64,64]{1,0} broadcast(%constant.84), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.85 = f32[] constant(-0.000200214257), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %erf_inv.36 = f32[64,64]{1,0} broadcast(%constant.85), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.37 = f32[64,64]{1,0} select(%erf_inv.10, %erf_inv.35, %erf_inv.36), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.86 = f32[] constant(2.5), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %negate.1 = f32[] negate(%constant.86), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %broadcast.3 = f32[64,64]{1,0} broadcast(%negate.1), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %add.54 = f32[64,64]{1,0} add(%erf_inv.8, %broadcast.3), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.40 = f32[64,64]{1,0} sqrt(%erf_inv.8), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.87 = f32[] constant(3), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %negate.2 = f32[] negate(%constant.87), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %broadcast.4 = f32[64,64]{1,0} broadcast(%negate.2), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %add.55 = f32[64,64]{1,0} add(%erf_inv.40, %broadcast.4), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.43 = f32[64,64]{1,0} select(%erf_inv.10, %add.54, %add.55), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.44 = f32[64,64]{1,0} multiply(%erf_inv.37, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.45 = f32[64,64]{1,0} add(%erf_inv.34, %erf_inv.44), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.46 = f32[64,64]{1,0} multiply(%erf_inv.45, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.47 = f32[64,64]{1,0} add(%erf_inv.31, %erf_inv.46), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.48 = f32[64,64]{1,0} multiply(%erf_inv.47, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.49 = f32[64,64]{1,0} add(%erf_inv.28, %erf_inv.48), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.50 = f32[64,64]{1,0} multiply(%erf_inv.49, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.51 = f32[64,64]{1,0} add(%erf_inv.25, %erf_inv.50), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.52 = f32[64,64]{1,0} multiply(%erf_inv.51, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.53 = f32[64,64]{1,0} add(%erf_inv.22, %erf_inv.52), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.54 = f32[64,64]{1,0} multiply(%erf_inv.53, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.55 = f32[64,64]{1,0} add(%erf_inv.19, %erf_inv.54), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.56 = f32[64,64]{1,0} multiply(%erf_inv.55, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.57 = f32[64,64]{1,0} add(%erf_inv.16, %erf_inv.56), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.58 = f32[64,64]{1,0} multiply(%erf_inv.57, %erf_inv.43), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.59 = f32[64,64]{1,0} add(%erf_inv.13, %erf_inv.58), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.60 = f32[64,64]{1,0} multiply(%erf_inv.59, %max.11), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %erf_inv.61 = f32[64,64]{1,0} select(%erf_inv.2, %erf_inv.4, %erf_inv.60), metadata={op_name="jit(_normal)/jit(_normal_real)/erf_inv" stack_frame_id=2}
+  %constant.88 = f32[] constant(1.41421354), metadata={op_name="jit(_normal)/jit(_normal_real)"}
+  %mul.14 = f32[64,64]{1,0} broadcast(%constant.88), dimensions={}, metadata={op_name="jit(_normal)/jit(_normal_real)/mul" stack_frame_id=2}
+  ROOT %mul.15 = f32[64,64]{1,0} multiply(%erf_inv.61, %mul.14), metadata={op_name="jit(_normal)/jit(_normal_real)/mul" stack_frame_id=2}
+}
+
