@@ -13,6 +13,7 @@ import jax.numpy as jnp
 from jax import lax
 import numpy as np
 from dataclasses import dataclass
+from jaxlib.mlir import ir
 
 
 @dataclass
@@ -33,9 +34,28 @@ class StableHLOToJaxpr:
         self.mlir_module = None  # Store module for function lookup
         self.function_cache = {}  # Cache for decompiled helper functions
 
-    def _get_value_name(self, mlir_value):
+    def _get_value_name(self, mlir_value, result_index=None):
         """Get a stable string identifier for an MLIR value."""
-        return str(mlir_value)
+        # For multi-value operations, we need to include the result index
+        base_name = str(mlir_value)
+
+        # Check if this is an OpResult with a result_number attribute
+        if hasattr(mlir_value, 'result_number'):
+            return f"{base_name}#result{mlir_value.result_number}"
+
+        # Try to check if it's an OpResult using isinstance
+        try:
+            if ir.OpResult.isinstance(mlir_value):
+                opresult = ir.OpResult(mlir_value)
+                return f"{base_name}#result{opresult.result_number}"
+        except:
+            pass
+
+        # Otherwise use the provided result_index if available
+        if result_index is not None:
+            return f"{base_name}#result{result_index}"
+
+        return base_name
 
     def _parse_tensor_type(self, mlir_type):
         """Parse MLIR tensor type to get shape and dtype info."""
@@ -726,6 +746,14 @@ class StableHLOToJaxpr:
             else:
                 return None
 
+        # CHLO operations (Client HLO)
+        elif op_name_str == 'chlo.top_k':
+            # Parse k attribute
+            k = attrs.get('k', 1)
+            if hasattr(k, '__int__'):
+                k = int(k)
+            result = lax.top_k(operands[0], k)
+
         else:
             # Unknown operation - skip
             print(f"Warning: Skipping unsupported operation: {op_name_str}")
@@ -778,10 +806,11 @@ class StableHLOToJaxpr:
                     result_name = self._get_value_name(results[0])
                     value_dict[result_name] = result
                 elif len(results) > 1:
-                    # Multiple results
+                    # Multiple results - use result index to disambiguate
                     for i, res in enumerate(results):
-                        result_name = self._get_value_name(res)
-                        value_dict[result_name] = result[i] if isinstance(result, (tuple, list)) else result
+                        result_name = self._get_value_name(res, result_index=i)
+                        value_to_store = result[i] if isinstance(result, (tuple, list)) else result
+                        value_dict[result_name] = value_to_store
 
         return outputs
 
