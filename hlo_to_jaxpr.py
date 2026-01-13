@@ -30,6 +30,8 @@ class StableHLOToJaxpr:
     def __init__(self):
         self.functions = {}  # Name -> DecompiledFunction
         self.value_dict = {}  # Maps StableHLO value names/ids to computed values
+        self.mlir_module = None  # Store module for function lookup
+        self.function_cache = {}  # Cache for decompiled helper functions
 
     def _get_value_name(self, mlir_value):
         """Get a stable string identifier for an MLIR value."""
@@ -184,6 +186,16 @@ class StableHLOToJaxpr:
         elif op_name_str == 'stablehlo.minimum':
             result = lax.min(operands[0], operands[1])
 
+        # Bitwise/logical operations
+        elif op_name_str == 'stablehlo.and':
+            result = lax.bitwise_and(operands[0], operands[1])
+
+        elif op_name_str == 'stablehlo.or':
+            result = lax.bitwise_or(operands[0], operands[1])
+
+        elif op_name_str == 'stablehlo.xor':
+            result = lax.bitwise_xor(operands[0], operands[1])
+
         # Comparison operations
         elif op_name_str == 'stablehlo.compare':
             direction = str(attrs.get('comparison_direction', ''))
@@ -209,6 +221,9 @@ class StableHLOToJaxpr:
         elif op_name_str == 'stablehlo.abs':
             result = lax.abs(operands[0])
 
+        elif op_name_str == 'stablehlo.not':
+            result = lax.bitwise_not(operands[0])
+
         elif op_name_str in ('stablehlo.exp', 'stablehlo.exponential'):
             result = lax.exp(operands[0])
 
@@ -218,10 +233,10 @@ class StableHLOToJaxpr:
         elif op_name_str == 'stablehlo.tanh':
             result = lax.tanh(operands[0])
 
-        elif op_name_str == 'stablehlo.sin':
+        elif op_name_str in ('stablehlo.sin', 'stablehlo.sine'):
             result = lax.sin(operands[0])
 
-        elif op_name_str == 'stablehlo.cos':
+        elif op_name_str in ('stablehlo.cos', 'stablehlo.cosine'):
             result = lax.cos(operands[0])
 
         elif op_name_str == 'stablehlo.sqrt':
@@ -284,6 +299,94 @@ class StableHLOToJaxpr:
             # operands: [array, update, *start_indices]
             result = lax.dynamic_update_slice(operands[0], operands[1], operands[2:])
 
+        elif op_name_str == 'stablehlo.slice':
+            # Static slice operation
+            # Parse start_indices, limit_indices, strides from attributes
+            start_indices = ()
+            limit_indices = ()
+            strides = ()
+
+            if 'start_indices' in attrs:
+                start_attr = attrs['start_indices']
+                start_indices = tuple(int(d) for d in start_attr)
+
+            if 'limit_indices' in attrs:
+                limit_attr = attrs['limit_indices']
+                limit_indices = tuple(int(d) for d in limit_attr)
+
+            if 'strides' in attrs:
+                stride_attr = attrs['strides']
+                strides = tuple(int(d) for d in stride_attr)
+            else:
+                strides = tuple(1 for _ in start_indices)
+
+            result = lax.slice(operands[0], start_indices, limit_indices, strides)
+
+        # Concatenate
+        elif op_name_str == 'stablehlo.concatenate':
+            # Parse dimension from attributes
+            dimension = 0
+            if 'dimension' in attrs:
+                dimension = int(attrs['dimension'])
+
+            result = lax.concatenate(operands, dimension)
+
+        # Pad
+        elif op_name_str == 'stablehlo.pad':
+            # operands: [operand, padding_value]
+            # Parse padding configuration from attributes
+            if 'edge_padding_low' in attrs and 'edge_padding_high' in attrs:
+                low = tuple(int(d) for d in attrs['edge_padding_low'])
+                high = tuple(int(d) for d in attrs['edge_padding_high'])
+
+                # Interior padding (between elements)
+                interior = ()
+                if 'interior_padding' in attrs:
+                    interior = tuple(int(d) for d in attrs['interior_padding'])
+                else:
+                    interior = tuple(0 for _ in low)
+
+                # Create padding_config for lax.pad
+                padding_config = tuple((l, h, i) for l, h, i in zip(low, high, interior))
+                result = lax.pad(operands[0], operands[1], padding_config)
+            else:
+                result = operands[0]
+
+        # Gather
+        elif op_name_str == 'stablehlo.gather':
+            # This is complex - for now, handle simple cases
+            # operands: [operand, start_indices]
+            # For full support, would need to parse gather dimension numbers
+            # For now, skip or use a simple implementation
+            print(f"Warning: gather operation has limited support")
+            result = operands[0]  # Placeholder
+
+        # Scatter
+        elif op_name_str == 'stablehlo.scatter':
+            # Also complex - skip for now
+            print(f"Warning: scatter operation has limited support")
+            result = operands[0]  # Placeholder
+
+        # Reverse
+        elif op_name_str == 'stablehlo.reverse':
+            # Parse dimensions to reverse
+            dimensions = ()
+            if 'dimensions' in attrs:
+                dims_attr = attrs['dimensions']
+                dimensions = tuple(int(d) for d in dims_attr)
+
+            # Use lax.rev to reverse along specified dimensions
+            result = operands[0]
+            for dim in dimensions:
+                result = lax.rev(result, (dim,))
+
+        # Sort
+        elif op_name_str == 'stablehlo.sort':
+            # Sort is complex - has comparator region
+            # For now, use simple sort
+            print(f"Warning: sort operation has limited support")
+            result = lax.sort(operands[0])
+
         # Select and clamp
         elif op_name_str == 'stablehlo.select':
             # select(pred, on_true, on_false)
@@ -333,6 +436,23 @@ class StableHLOToJaxpr:
                 if result is None:
                     raise ValueError(f"Could not parse constant value: {attrs['value']}")
 
+        elif op_name_str == 'stablehlo.iota':
+            # Create an array of values from 0 to N-1
+            # Parse the iota dimension and result type
+            if hasattr(op, 'results') and len(list(op.results)) > 0:
+                shape, dtype = self._parse_tensor_type(list(op.results)[0].type)
+                # Get the iota dimension
+                iota_dimension = 0
+                if 'iota_dimension' in attrs:
+                    iota_dimension = int(attrs['iota_dimension'])
+                result = lax.iota(dtype, shape[iota_dimension] if shape else 0)
+                # If shape has multiple dimensions, need to broadcast
+                if len(shape) > 1:
+                    # Reshape and broadcast to the full shape
+                    result = lax.broadcast_in_dim(result, shape, (iota_dimension,))
+            else:
+                result = jnp.array([])
+
         # Reduction operations
         elif op_name_str == 'stablehlo.reduce':
             # Parse dimensions
@@ -342,9 +462,54 @@ class StableHLOToJaxpr:
                 if dims_attr:
                     dimensions = tuple(int(d) for d in dims_attr)
 
-            # For now, assume sum reduction (most common)
-            # TODO: Parse the reduction body to determine the actual reduction type
-            result = lax.reduce_sum(operands[0], dimensions)
+            # Infer the reduction type from the computation region
+            # operands: [input, init_value]
+            reduction_type = 'sum'  # default
+
+            if hasattr(op, 'regions'):
+                regions = list(op.regions)
+                if regions:
+                    region = regions[0]
+                    blocks = list(region.blocks)
+                    if blocks:
+                        block = blocks[0]
+                        # Check the operations in the reduction body
+                        for block_op in block.operations:
+                            op_name_str_inner = str(block_op.operation.name)
+                            if 'add' in op_name_str_inner:
+                                reduction_type = 'sum'
+                                break
+                            elif 'maximum' in op_name_str_inner:
+                                reduction_type = 'max'
+                                break
+                            elif 'minimum' in op_name_str_inner:
+                                reduction_type = 'min'
+                                break
+                            elif 'multiply' in op_name_str_inner:
+                                reduction_type = 'prod'
+                                break
+                            elif 'or' in op_name_str_inner:
+                                reduction_type = 'any'
+                                break
+                            elif 'and' in op_name_str_inner:
+                                reduction_type = 'all'
+                                break
+
+            # Apply the appropriate reduction
+            if reduction_type == 'sum':
+                result = lax.reduce_sum(operands[0], dimensions)
+            elif reduction_type == 'max':
+                result = lax.reduce_max(operands[0], dimensions)
+            elif reduction_type == 'min':
+                result = lax.reduce_min(operands[0], dimensions)
+            elif reduction_type == 'prod':
+                result = lax.reduce_prod(operands[0], dimensions)
+            elif reduction_type == 'any':
+                result = lax.reduce_or(operands[0], dimensions)
+            elif reduction_type == 'all':
+                result = lax.reduce_and(operands[0], dimensions)
+            else:
+                result = lax.reduce_sum(operands[0], dimensions)
 
         # Control flow - while loop
         elif op_name_str == 'stablehlo.while':
@@ -378,11 +543,7 @@ class StableHLOToJaxpr:
                     def body_fn(loop_state):
                         # Unpack loop state for decompile_block
                         if isinstance(loop_state, tuple):
-                            result = self.decompile_block(body_block, *loop_state)
-                            # Ensure result is a tuple if init_val was a tuple
-                            if not isinstance(result, tuple) and isinstance(init_val, tuple):
-                                return (result,)
-                            return result
+                            return self.decompile_block(body_block, *loop_state)
                         else:
                             return self.decompile_block(body_block, loop_state)
 
@@ -396,20 +557,20 @@ class StableHLOToJaxpr:
             regions = list(op.regions)
 
             # Create branch functions
+            # Branches need access to outer scope variables
             branches = []
             for region in regions:
                 blocks = list(region.blocks)
                 if blocks:
                     block = blocks[0]
                     # Create a function for this branch
-                    # Branches in StableHLO case don't take arguments from the outer scope directly,
-                    # they're called with no args and can return values
-                    def make_branch_fn(blk):
+                    # Branches in StableHLO case don't take arguments but can access outer scope
+                    def make_branch_fn(blk, outer_dict):
                         def branch_fn():
-                            # Call with empty inputs since case branches don't take arguments
-                            return self.decompile_block(blk)
+                            # Pass outer scope so branch can access outer variables
+                            return self.decompile_block(blk, outer_scope=outer_dict)
                         return branch_fn
-                    branches.append(make_branch_fn(block))
+                    branches.append(make_branch_fn(block, value_dict.copy()))
 
             # Use lax.switch for multi-way branch
             if len(branches) == 2:
@@ -419,10 +580,50 @@ class StableHLOToJaxpr:
                 # Multi-way branch - use lax.switch
                 result = lax.switch(index, branches)
 
+        # Function call
+        elif op_name_str == 'func.call':
+            # Get the function name from attributes
+            if 'callee' in attrs:
+                callee_name = str(attrs['callee']).strip('"').strip('@')
+
+                # Look up the function in the module
+                if callee_name in self.function_cache:
+                    # Use cached decompiled function
+                    func_callable = self.function_cache[callee_name]
+                    result = func_callable(*operands)
+                elif self.mlir_module:
+                    # Find and decompile the function
+                    for module_op in self.mlir_module.body.operations:
+                        if hasattr(module_op, 'name'):
+                            func_name = str(module_op.name).strip('"').strip('@')
+                            if func_name == callee_name:
+                                # Decompile this function
+                                decompiled = self.decompile_function(module_op)
+                                # Cache it
+                                self.function_cache[callee_name] = decompiled.callable_fn
+                                # Execute it
+                                result = decompiled.callable_fn(*operands)
+                                break
+                    else:
+                        print(f"Warning: Could not find function {callee_name}")
+                        result = operands[0] if operands else None
+                else:
+                    print(f"Warning: No module available for function lookup")
+                    result = operands[0] if operands else None
+            else:
+                print(f"Warning: func.call without callee attribute")
+                result = operands[0] if operands else None
+
         # Terminal operations
         elif op_name_str in ('func.return', 'stablehlo.return'):
             # Return the operands as the result
-            return operands if len(operands) > 1 else (operands[0] if operands else None)
+            # Return as tuple for multiple values to maintain pytree structure
+            if len(operands) > 1:
+                return tuple(operands)
+            elif len(operands) == 1:
+                return operands[0]
+            else:
+                return None
 
         else:
             # Unknown operation - skip
@@ -431,19 +632,21 @@ class StableHLOToJaxpr:
 
         return result
 
-    def decompile_block(self, block, *input_values):
+    def decompile_block(self, block, *input_values, outer_scope=None):
         """
         Decompile a block by executing all operations.
 
         Args:
             block: The MLIR block to decompile
             *input_values: Input values for the block arguments
+            outer_scope: Optional dictionary of values from outer scope
 
         Returns:
             The output values from the block
         """
         # Create a value dictionary for this block
-        value_dict = {}
+        # Start with outer scope if provided (for case branches)
+        value_dict = outer_scope.copy() if outer_scope else {}
 
         # Map block arguments to input values
         block_args = list(block.arguments)
@@ -520,6 +723,8 @@ class StableHLOToJaxpr:
 
     def decompile_module(self, mlir_module) -> Dict[str, DecompiledFunction]:
         """Decompile an entire MLIR module."""
+        # Store module for function lookup
+        self.mlir_module = mlir_module
         functions = {}
 
         for op in mlir_module.body.operations:
