@@ -431,11 +431,39 @@ class StableHLOToJaxpr:
                 dim_nums_str = str(attrs['scatter_dimension_numbers'])
                 dimension_numbers = self._parse_scatter_dimension_numbers(dim_nums_str)
 
-            # Execute scatter
-            # Note: StableHLO scatter has a computation region that defines the reduction
-            # For now, we'll use the default (addition) which is most common
+            # Detect scatter reduction type from computation region
+            scatter_op = 'replace'  # default
+            if hasattr(op, 'regions') and len(op.regions) > 0:
+                region = op.regions[0]
+                if hasattr(region, 'blocks'):
+                    for block in region.blocks:
+                        for region_op in block.operations:
+                            region_op_name = str(region_op.name)
+                            if 'add' in region_op_name:
+                                scatter_op = 'add'
+                                break
+                            elif 'multiply' in region_op_name or 'mul' in region_op_name:
+                                scatter_op = 'mul'
+                                break
+                            elif 'minimum' in region_op_name or 'min' in region_op_name:
+                                scatter_op = 'min'
+                                break
+                            elif 'maximum' in region_op_name or 'max' in region_op_name:
+                                scatter_op = 'max'
+                                break
+
+            # Execute scatter with appropriate reduction
             if dimension_numbers:
-                result = lax.scatter(operands[0], operands[1], operands[2], dimension_numbers)
+                if scatter_op == 'add':
+                    result = lax.scatter_add(operands[0], operands[1], operands[2], dimension_numbers)
+                elif scatter_op == 'mul':
+                    result = lax.scatter_mul(operands[0], operands[1], operands[2], dimension_numbers)
+                elif scatter_op == 'min':
+                    result = lax.scatter_min(operands[0], operands[1], operands[2], dimension_numbers)
+                elif scatter_op == 'max':
+                    result = lax.scatter_max(operands[0], operands[1], operands[2], dimension_numbers)
+                else:
+                    result = lax.scatter(operands[0], operands[1], operands[2], dimension_numbers)
             else:
                 print(f"Warning: Could not parse scatter parameters, skipping")
                 result = operands[0]
