@@ -272,6 +272,10 @@ class StableHLOToJaxpr:
             'stablehlo.xor': lax.bitwise_xor,
             'stablehlo.pow': lax.pow,
             'stablehlo.power': lax.pow,
+            'stablehlo.atan2': lax.atan2,
+            'stablehlo.shift_left': lax.shift_left,
+            'stablehlo.shift_right_arithmetic': lax.shift_right_arithmetic,
+            'stablehlo.shift_right_logical': lax.shift_right_logical,
         }
 
     BINARY_OPS = property(_get_binary_ops)
@@ -294,6 +298,35 @@ class StableHLOToJaxpr:
         'stablehlo.floor': lax.floor,
         'stablehlo.ceil': lax.ceil,
         'stablehlo.round_nearest_afz': lax.round,
+        'stablehlo.tan': lax.tan,
+        'stablehlo.exponential_minus_one': lax.expm1,
+        'stablehlo.log_plus_one': lax.log1p,
+        # CHLO (Client HLO) operations - higher-level ops
+        'chlo.acos': lax.acos,
+        'chlo.acosh': lax.acosh,
+        'chlo.asin': lax.asin,
+        'chlo.asinh': lax.asinh,
+        'chlo.atan': lax.atan,
+        'chlo.atanh': lax.atanh,
+        'chlo.cosh': lax.cosh,
+        'chlo.sinh': lax.sinh,
+        'chlo.erf': lax.erf,
+        'chlo.erf_inv': lax.erf_inv,
+        'chlo.erfc': lax.erfc,
+        # Additional CHLO operations
+        'chlo.bessel_i0e': lax.bessel_i0e,
+        'chlo.bessel_i1e': lax.bessel_i1e,
+        'chlo.digamma': lax.digamma,
+        'chlo.lgamma': lax.lgamma,
+        'chlo.square': lax.square,
+        'chlo.next_after': lax.nextafter,
+        # Additional StableHLO operations
+        'stablehlo.cbrt': lax.cbrt,
+        'stablehlo.is_finite': lax.is_finite,
+        'stablehlo.count_leading_zeros': lax.clz,
+        'stablehlo.popcnt': lax.population_count,
+        'stablehlo.exp2': lax.exp2,
+        'stablehlo.reciprocal': lax.reciprocal,
     }
 
     def _execute_operation(self, op_name: str, op, value_dict: Dict[str, Any]) -> Optional[Any]:
@@ -333,6 +366,28 @@ class StableHLOToJaxpr:
         # Check unary operations dictionary
         elif op_name_str in self.UNARY_OPS:
             result = self.UNARY_OPS[op_name_str](operands[0])
+
+        # Complex number operations
+        elif op_name_str == 'stablehlo.complex':
+            # Create complex from real and imaginary parts
+            result = lax.complex(operands[0], operands[1])
+
+        elif op_name_str == 'stablehlo.real':
+            # Extract real part of complex number
+            result = lax.real(operands[0])
+
+        elif op_name_str == 'stablehlo.imag':
+            # Extract imaginary part of complex number
+            result = lax.imag(operands[0])
+
+        # Bitcast convert
+        elif op_name_str == 'stablehlo.bitcast_convert':
+            # Get target dtype from result type
+            if hasattr(op, 'results') and len(list(op.results)) > 0:
+                _, new_dtype = self._parse_tensor_type(list(op.results)[0].type)
+                result = lax.bitcast_convert_type(operands[0], new_dtype)
+            else:
+                result = operands[0]
 
         # Comparison operations
         elif op_name_str == 'stablehlo.compare':
@@ -667,6 +722,159 @@ class StableHLOToJaxpr:
                 result = lax.reduce_and(operands[0], dimensions)
             else:
                 result = lax.reduce_sum(operands[0], dimensions)
+
+        # Reduce window operations
+        elif op_name_str == 'stablehlo.reduce_window':
+            # Parse window configuration
+            import re
+            window_dimensions = ()
+            window_strides = ()
+            padding = ()
+            base_dilations = ()
+            window_dilations = ()
+
+            if 'window_dimensions' in attrs:
+                window_dimensions = tuple(int(d) for d in attrs['window_dimensions'])
+            if 'window_strides' in attrs:
+                window_strides = tuple(int(d) for d in attrs['window_strides'])
+            else:
+                window_strides = tuple(1 for _ in window_dimensions)
+            if 'base_dilations' in attrs:
+                base_dilations = tuple(int(d) for d in attrs['base_dilations'])
+            else:
+                base_dilations = tuple(1 for _ in window_dimensions)
+            if 'window_dilations' in attrs:
+                window_dilations = tuple(int(d) for d in attrs['window_dilations'])
+            else:
+                window_dilations = tuple(1 for _ in window_dimensions)
+
+            # Parse padding
+            if 'padding' in attrs:
+                padding_attr = str(attrs['padding'])
+                # Extract padding values from dense<[[low0, high0], [low1, high1]]>
+                padding_match = re.findall(r'\[(\d+),\s*(\d+)\]', padding_attr)
+                if padding_match:
+                    padding = tuple((int(low), int(high)) for low, high in padding_match)
+                else:
+                    padding = tuple((0, 0) for _ in window_dimensions)
+            else:
+                padding = tuple((0, 0) for _ in window_dimensions)
+
+            # Infer reduction function from computation region
+            # operands: [input, init_value]
+            reducer = lax.add  # default
+
+            if hasattr(op, 'regions'):
+                regions = list(op.regions)
+                if regions:
+                    region = regions[0]
+                    blocks = list(region.blocks)
+                    if blocks:
+                        block = blocks[0]
+                        for block_op in block.operations:
+                            op_name_str_inner = str(block_op.operation.name)
+                            if 'add' in op_name_str_inner:
+                                reducer = lax.add
+                                break
+                            elif 'maximum' in op_name_str_inner:
+                                reducer = lax.max
+                                break
+                            elif 'minimum' in op_name_str_inner:
+                                reducer = lax.min
+                                break
+                            elif 'multiply' in op_name_str_inner:
+                                reducer = lax.mul
+                                break
+
+            result = lax.reduce_window(operands[0], operands[1], reducer,
+                                     window_dimensions, window_strides, padding,
+                                     base_dilations, window_dilations)
+
+        # Convolution operations
+        elif op_name_str == 'stablehlo.convolution':
+            # Parse convolution attributes
+            import re
+
+            # Parse dimension numbers
+            dim_nums_str = str(attrs.get('dim_numbers', ''))
+
+            # Extract input_batch_dimension, input_feature_dimension, etc.
+            # Format: [b, f, 0, 1]x[i, o, 0, 1]->[b, f, 0, 1]
+            dim_pattern = r'\[([^\]]+)\]x\[([^\]]+)\]->\[([^\]]+)\]'
+            match = re.search(dim_pattern, dim_nums_str)
+
+            if match:
+                lhs_spec_str = match.group(1).split(',')
+                rhs_spec_str = match.group(2).split(',')
+                out_spec_str = match.group(3).split(',')
+
+                # Parse the dimension specs
+                # Map letters and numbers to dimension indices
+                def parse_spec(spec_parts):
+                    dims = []
+                    for part in spec_parts:
+                        part = part.strip()
+                        if part.isdigit():
+                            dims.append(int(part))
+                        elif part == 'b':
+                            dims.append(0)  # batch
+                        elif part == 'f':
+                            dims.append(1)  # feature
+                        elif part == 'i':
+                            dims.append(2)  # input feature
+                        elif part == 'o':
+                            dims.append(3)  # output feature
+                    return tuple(dims)
+
+                lhs_spec = parse_spec(lhs_spec_str)
+                rhs_spec = parse_spec(rhs_spec_str)
+                out_spec = parse_spec(out_spec_str)
+
+                dimension_numbers = lax.ConvDimensionNumbers(
+                    lhs_spec=lhs_spec,
+                    rhs_spec=rhs_spec,
+                    out_spec=out_spec
+                )
+            else:
+                # Default to NHWC format
+                dimension_numbers = lax.ConvDimensionNumbers(
+                    lhs_spec=(0, 3, 1, 2),
+                    rhs_spec=(3, 2, 0, 1),
+                    out_spec=(0, 3, 1, 2)
+                )
+
+            # Parse window attributes
+            window_str = str(attrs.get('window', ''))
+
+            # Extract stride
+            stride_match = re.search(r'stride\s*=\s*\[([^\]]+)\]', window_str)
+            window_strides = (1, 1)
+            if stride_match:
+                window_strides = tuple(int(x.strip()) for x in stride_match.group(1).split(','))
+
+            # Extract padding
+            padding_match = re.search(r'pad\s*=\s*\[\[([^\]]+)\]\]', window_str)
+            padding = 'VALID'
+            if padding_match:
+                padding_vals = re.findall(r'\[(\d+),\s*(\d+)\]', window_str)
+                if padding_vals:
+                    padding = tuple((int(low), int(high)) for low, high in padding_vals)
+
+            # Extract dilations
+            lhs_dil_match = re.search(r'lhs_dilate\s*=\s*\[([^\]]+)\]', window_str)
+            lhs_dilation = (1, 1)
+            if lhs_dil_match:
+                lhs_dilation = tuple(int(x.strip()) for x in lhs_dil_match.group(1).split(','))
+
+            rhs_dil_match = re.search(r'rhs_dilate\s*=\s*\[([^\]]+)\]', window_str)
+            rhs_dilation = (1, 1)
+            if rhs_dil_match:
+                rhs_dilation = tuple(int(x.strip()) for x in rhs_dil_match.group(1).split(','))
+
+            result = lax.conv_general_dilated(
+                operands[0], operands[1], window_strides, padding,
+                lhs_dilation, rhs_dilation, dimension_numbers
+            )
 
         # Control flow - while loop
         elif op_name_str == 'stablehlo.while':
