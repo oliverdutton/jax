@@ -213,6 +213,12 @@ class StableHLOToJaxpr:
         elif op_name_str == 'stablehlo.sqrt':
             return lax.sqrt_p, {}, operand_vars, result_vars
 
+        elif op_name_str == 'stablehlo.rsqrt':
+            return lax.rsqrt_p, {}, operand_vars, result_vars
+
+        elif op_name_str == 'stablehlo.pow' or op_name_str == 'stablehlo.power':
+            return lax.pow_p, {}, operand_vars, result_vars
+
         # Type conversion
         elif op_name_str == 'stablehlo.convert':
             new_dtype = result_vars[0].aval.dtype
@@ -271,15 +277,58 @@ class StableHLOToJaxpr:
         elif op_name_str == 'stablehlo.dynamic_update_slice':
             return lax.dynamic_update_slice_p, {}, operand_vars, result_vars
 
+        elif op_name_str == 'stablehlo.slice':
+            # Static slice operation
+            # Parse start_indices, limit_indices, strides from attributes
+            return None, {}, operand_vars, result_vars  # Skip for now
+
+        # Select and clamp operations
+        elif op_name_str == 'stablehlo.select':
+            # select(pred, on_true, on_false)
+            return lax.select_n_p, {'which': 2}, operand_vars, result_vars
+
+        elif op_name_str == 'stablehlo.clamp':
+            # clamp(min, operand, max)
+            return lax.clamp_p, {}, operand_vars, result_vars
+
         # Dot operations
         elif op_name_str == 'stablehlo.dot_general':
-            # Parse dot_dimension_numbers
-            # For now, use default contraction
-            lhs_shape = operand_vars[0].aval.shape
-            rhs_shape = operand_vars[1].aval.shape
+            # Parse dot_dimension_numbers from attributes
+            # Format: dot_dimension_numbers = #stablehlo.dot<lhs_batching_dimensions = [...], rhs_batching_dimensions = [...], lhs_contracting_dimensions = [...], rhs_contracting_dimensions = [...]>
 
-            # Simple matmul case
-            dimension_numbers = (((len(lhs_shape) - 1,), (0,)), ((), ()))
+            lhs_batch = ()
+            rhs_batch = ()
+            lhs_contract = ()
+            rhs_contract = ()
+
+            if 'dot_dimension_numbers' in attrs:
+                dim_nums_str = attrs['dot_dimension_numbers']
+                # Parse the dimension numbers
+                # This is a complex string like "#stablehlo.dot<lhs_batching_dimensions = [0], ...>"
+                # For simplicity, try to extract the numbers
+                import re
+
+                # Extract lhs_contracting_dimensions
+                lhs_contract_match = re.search(r'lhs_contracting_dimensions\s*=\s*\[([^\]]*)\]', dim_nums_str)
+                if lhs_contract_match:
+                    lhs_contract = tuple(int(x.strip()) for x in lhs_contract_match.group(1).split(',') if x.strip())
+
+                # Extract rhs_contracting_dimensions
+                rhs_contract_match = re.search(r'rhs_contracting_dimensions\s*=\s*\[([^\]]*)\]', dim_nums_str)
+                if rhs_contract_match:
+                    rhs_contract = tuple(int(x.strip()) for x in rhs_contract_match.group(1).split(',') if x.strip())
+
+                # Extract lhs_batching_dimensions
+                lhs_batch_match = re.search(r'lhs_batching_dimensions\s*=\s*\[([^\]]*)\]', dim_nums_str)
+                if lhs_batch_match:
+                    lhs_batch = tuple(int(x.strip()) for x in lhs_batch_match.group(1).split(',') if x.strip())
+
+                # Extract rhs_batching_dimensions
+                rhs_batch_match = re.search(r'rhs_batching_dimensions\s*=\s*\[([^\]]*)\]', dim_nums_str)
+                if rhs_batch_match:
+                    rhs_batch = tuple(int(x.strip()) for x in rhs_batch_match.group(1).split(',') if x.strip())
+
+            dimension_numbers = ((lhs_contract, rhs_contract), (lhs_batch, rhs_batch))
             params = {
                 'dimension_numbers': dimension_numbers,
                 'precision': None,
@@ -299,7 +348,57 @@ class StableHLOToJaxpr:
 
         # Reduction operations
         elif op_name_str == 'stablehlo.reduce':
-            # This is complex, skip for now
+            # StableHLO reduce has a nested computation region
+            # For now, infer the reduction type from the result
+            # Common patterns: sum, max, min, etc.
+
+            # Parse dimensions from attributes
+            dimensions = ()
+            if 'dimensions' in attrs:
+                dims_attr = dict(op.attributes).get('dimensions')
+                if dims_attr:
+                    dimensions = tuple(int(d) for d in dims_attr)
+
+            # Try to infer reduction type from the nested region
+            # For now, default to sum
+            # TODO: Parse the region to determine actual reduction
+            params = {
+                'axes': dimensions,
+            }
+            # Use reduce_sum_p as default
+            return lax.reduce_sum_p, params, [operand_vars[0]], result_vars
+
+        # Distributed/collective operations
+        elif op_name_str == 'stablehlo.all_reduce':
+            # Parse reduction computation from attributes
+            # For now, assume sum reduction
+            params = {
+                'axis_name': (),  # Will need to parse from replica_groups
+                'axis_index_groups': None,
+            }
+            return lax.psum_p, params, operand_vars, result_vars
+
+        elif op_name_str == 'stablehlo.all_gather':
+            params = {
+                'all_gather_dimension': 0,  # Parse from attributes
+                'axis_name': (),
+                'axis_index_groups': None,
+                'axis_size': None,
+                'tiled': False,
+            }
+            return lax.all_gather_p, params, operand_vars, result_vars
+
+        elif op_name_str == 'stablehlo.reduce_scatter':
+            params = {
+                'scatter_dimension': 0,  # Parse from attributes
+                'axis_name': (),
+                'axis_index_groups': None,
+                'tiled': False,
+            }
+            return lax.psum_scatter_p, params, operand_vars, result_vars
+
+        elif op_name_str == 'stablehlo.collective_permute':
+            # For now, skip complex collective ops
             return None, {}, operand_vars, result_vars
 
         # Control flow - while loop
