@@ -23,6 +23,8 @@ class DecompiledFunction:
     name: str = "decompiled"
     input_names: List[str] = None
     output_names: List[str] = None
+    mesh_info: Dict[str, Any] = None  # Mesh information for sharding
+    uses_collectives: bool = False  # Whether the function uses collective operations
 
 
 class StableHLOToJaxpr:
@@ -33,6 +35,12 @@ class StableHLOToJaxpr:
         self.value_dict = {}  # Maps StableHLO value names/ids to computed values
         self.mlir_module = None  # Store module for function lookup
         self.function_cache = {}  # Cache for decompiled helper functions
+        self.axis_names = []  # Stack of axis names for collective operations
+        self.in_manual_computation = False  # Track if we're inside manual_computation
+        self.uses_collectives = False  # Track if current function uses collectives
+        self.mesh_axis_names = []  # Mesh axis names from sdy.mesh
+        self.in_shardings = None  # Track input shardings
+        self.out_shardings = None  # Track output shardings
 
     def _get_value_name(self, mlir_value, result_index=None):
         """Get a stable string identifier for an MLIR value."""
@@ -224,21 +232,49 @@ class StableHLOToJaxpr:
             scatter_dims_to_operand_dims=scatter_dims
         )
 
+    # Helper functions for type-safe operations
+    @staticmethod
+    def _safe_div(x, y):
+        """Division that handles unsigned integers."""
+        # Convert unsigned to signed if needed to avoid dtype mismatch
+        if hasattr(x, 'dtype') and hasattr(y, 'dtype'):
+            if x.dtype != y.dtype:
+                # Try to use a common dtype
+                common_dtype = jnp.result_type(x.dtype, y.dtype)
+                x = x.astype(common_dtype)
+                y = y.astype(common_dtype)
+        return lax.div(x, y)
+
+    @staticmethod
+    def _safe_rem(x, y):
+        """Remainder that handles unsigned integers."""
+        # Convert unsigned to signed if needed to avoid dtype mismatch
+        if hasattr(x, 'dtype') and hasattr(y, 'dtype'):
+            if x.dtype != y.dtype:
+                # Try to use a common dtype
+                common_dtype = jnp.result_type(x.dtype, y.dtype)
+                x = x.astype(common_dtype)
+                y = y.astype(common_dtype)
+        return lax.rem(x, y)
+
     # Operation mapping dictionaries for cleaner code
-    BINARY_OPS = {
-        'stablehlo.add': lax.add,
-        'stablehlo.subtract': lax.sub,
-        'stablehlo.multiply': lax.mul,
-        'stablehlo.divide': lax.div,
-        'stablehlo.remainder': lax.rem,
-        'stablehlo.maximum': lax.max,
-        'stablehlo.minimum': lax.min,
-        'stablehlo.and': lax.bitwise_and,
-        'stablehlo.or': lax.bitwise_or,
-        'stablehlo.xor': lax.bitwise_xor,
-        'stablehlo.pow': lax.pow,
-        'stablehlo.power': lax.pow,
-    }
+    def _get_binary_ops(self):
+        return {
+            'stablehlo.add': lax.add,
+            'stablehlo.subtract': lax.sub,
+            'stablehlo.multiply': lax.mul,
+            'stablehlo.divide': self._safe_div,
+            'stablehlo.remainder': self._safe_rem,
+            'stablehlo.maximum': lax.max,
+            'stablehlo.minimum': lax.min,
+            'stablehlo.and': lax.bitwise_and,
+            'stablehlo.or': lax.bitwise_or,
+            'stablehlo.xor': lax.bitwise_xor,
+            'stablehlo.pow': lax.pow,
+            'stablehlo.power': lax.pow,
+        }
+
+    BINARY_OPS = property(_get_binary_ops)
 
     UNARY_OPS = {
         'stablehlo.negate': lax.neg,
@@ -754,6 +790,123 @@ class StableHLOToJaxpr:
                 k = int(k)
             result = lax.top_k(operands[0], k)
 
+        # Collective operations
+        elif op_name_str == 'stablehlo.all_reduce':
+            # Mark that this function uses collectives
+            self.uses_collectives = True
+
+            # Parse the reduction computation region to determine the type
+            reduction_op = 'sum'  # default
+            if hasattr(op, 'regions') and len(op.regions) > 0:
+                region = op.regions[0]
+                if hasattr(region, 'blocks'):
+                    for block in region.blocks:
+                        for region_op in block.operations:
+                            region_op_name = str(region_op.name)
+                            if 'add' in region_op_name:
+                                reduction_op = 'sum'
+                                break
+                            elif 'multiply' in region_op_name or 'mul' in region_op_name:
+                                reduction_op = 'prod'
+                                break
+                            elif 'minimum' in region_op_name or 'min' in region_op_name:
+                                reduction_op = 'min'
+                                break
+                            elif 'maximum' in region_op_name or 'max' in region_op_name:
+                                reduction_op = 'max'
+                                break
+                            elif 'or' in region_op_name:
+                                reduction_op = 'or'
+                                break
+                            elif 'and' in region_op_name:
+                                reduction_op = 'and'
+                                break
+
+            # Get the axis name (use the last one on the stack)
+            axis_name = self.axis_names[-1] if self.axis_names else 'i'
+
+            # Map to appropriate lax collective operation
+            if reduction_op == 'sum':
+                result = lax.psum(operands[0], axis_name=axis_name)
+            elif reduction_op == 'prod':
+                result = lax.pprod(operands[0], axis_name=axis_name)
+            elif reduction_op == 'max':
+                result = lax.pmax(operands[0], axis_name=axis_name)
+            elif reduction_op == 'min':
+                result = lax.pmin(operands[0], axis_name=axis_name)
+            elif reduction_op == 'or':
+                result = lax.por(operands[0], axis_name=axis_name)
+            elif reduction_op == 'and':
+                result = lax.pand(operands[0], axis_name=axis_name)
+            else:
+                result = lax.psum(operands[0], axis_name=axis_name)
+
+        elif op_name_str == 'stablehlo.all_gather':
+            # Mark that this function uses collectives
+            self.uses_collectives = True
+
+            # Get the axis name
+            axis_name = self.axis_names[-1] if self.axis_names else 'i'
+
+            # Parse all_gather_dim attribute
+            all_gather_dim = attrs.get('all_gather_dim', 0)
+            if hasattr(all_gather_dim, '__int__'):
+                all_gather_dim = int(all_gather_dim)
+
+            # Map to lax.all_gather
+            result = lax.all_gather(operands[0], axis_name=axis_name, axis=all_gather_dim, tiled=True)
+
+        elif op_name_str == 'stablehlo.partition_id':
+            # Mark that this function uses collectives
+            self.uses_collectives = True
+
+            # Get the axis name
+            axis_name = self.axis_names[-1] if self.axis_names else 'i'
+            # Map to lax.axis_index
+            result = lax.axis_index(axis_name=axis_name)
+
+        # SDY (Sharding) operations
+        elif op_name_str == 'sdy.manual_computation':
+            # This wraps the sharded computation
+            # We need to extract the manual_axes and execute the inner block
+            # Parse manual_axes attribute
+            manual_axes_str = str(attrs.get('manual_axes', {}))
+            # Extract axis names from the string (e.g., "{'i'}" -> ['i'])
+            import re
+            axis_matches = re.findall(r'"([^"]+)"', manual_axes_str)
+
+            # Push axis names onto stack
+            for axis in axis_matches:
+                self.axis_names.append(axis)
+
+            # Execute the inner region
+            if hasattr(op, 'regions') and len(op.regions) > 0:
+                region = op.regions[0]
+                if hasattr(region, 'blocks') and len(region.blocks) > 0:
+                    block = region.blocks[0]
+                    # Execute the block with the operands
+                    self.in_manual_computation = True
+                    result = self.decompile_block(block, *operands)
+                    self.in_manual_computation = False
+                else:
+                    result = operands[0] if operands else None
+            else:
+                result = operands[0] if operands else None
+
+            # Pop axis names
+            for _ in axis_matches:
+                if self.axis_names:
+                    self.axis_names.pop()
+
+        elif op_name_str == 'sdy.return':
+            # Similar to stablehlo.return
+            if len(operands) > 1:
+                return tuple(operands)
+            elif len(operands) == 1:
+                return operands[0]
+            else:
+                return None
+
         else:
             # Unknown operation - skip
             print(f"Warning: Skipping unsupported operation: {op_name_str}")
@@ -814,6 +967,21 @@ class StableHLOToJaxpr:
 
         return outputs
 
+    def _scan_for_collectives(self, block):
+        """Scan a block recursively for collective operations."""
+        for op in block.operations:
+            op_name = str(op.operation.name)
+            if any(coll_op in op_name for coll_op in ['all_reduce', 'all_gather', 'partition_id', 'manual_computation']):
+                return True
+            # Recurse into regions
+            if hasattr(op, 'regions'):
+                for region in op.regions:
+                    if hasattr(region, 'blocks'):
+                        for sub_block in region.blocks:
+                            if self._scan_for_collectives(sub_block):
+                                return True
+        return False
+
     def decompile_function(self, func_op) -> DecompiledFunction:
         """
         Decompile a function operation to a callable Python function.
@@ -838,6 +1006,9 @@ class StableHLOToJaxpr:
 
         block = blocks[0]
 
+        # Scan for collective operations
+        uses_collectives = self._scan_for_collectives(block)
+
         # Get input names
         input_names = [self._get_value_name(arg) for arg in block.arguments]
 
@@ -845,10 +1016,21 @@ class StableHLOToJaxpr:
         def callable_fn(*inputs):
             return self.decompile_block(block, *inputs)
 
+        # Create mesh info if we detected collectives
+        mesh_info = None
+        if uses_collectives and self.mesh_axis_names:
+            mesh_info = {
+                'axis_names': tuple(self.mesh_axis_names),
+                'in_specs': self.in_shardings,
+                'out_specs': self.out_shardings,
+            }
+
         return DecompiledFunction(
             callable_fn=callable_fn,
             name=func_name,
             input_names=input_names,
+            mesh_info=mesh_info,
+            uses_collectives=uses_collectives,
         )
 
     def decompile_module(self, mlir_module) -> Dict[str, DecompiledFunction]:
@@ -857,8 +1039,29 @@ class StableHLOToJaxpr:
         self.mlir_module = mlir_module
         functions = {}
 
+        # Reset collective tracking
+        self.uses_collectives = False
+        self.mesh_axis_names = []
+
+        # First pass: extract mesh information
+        for op in mlir_module.body.operations:
+            # Look for sdy.mesh operation
+            op_name = str(op.operation.name)
+            if 'sdy.mesh' in op_name:
+                # Extract axis names from mesh
+                # Format: <["i"=8]> or <["data"=2, "model"=4]>
+                mesh_str = str(op)
+                import re
+                # Find all axis names
+                axis_matches = re.findall(r'"([^"]+)"=', mesh_str)
+                self.mesh_axis_names.extend(axis_matches)
+
+        # Second pass: decompile functions
         for op in mlir_module.body.operations:
             if hasattr(op, 'function_type'):
+                # Reset for each function
+                self.uses_collectives = False
+
                 func = self.decompile_function(op)
                 functions[func.name] = func
 
