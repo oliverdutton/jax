@@ -38,6 +38,11 @@ print("Compiled successfully!")
 print(f"Compiled type: {type(compiled)}")
 print("\n" + "="*80 + "\n")
 
+# Print the compiled HLO
+print("Compiled HLO:")
+print(compiled.as_text())
+print("\n" + "="*80 + "\n")
+
 # Try to run it (this will attempt to shard across the fake mesh)
 print("Attempting to run the compiled function...")
 try:
