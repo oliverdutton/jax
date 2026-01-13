@@ -134,6 +134,76 @@ class StableHLOToJaxpr:
                 attrs[str(name)] = value
         return attrs
 
+    def _parse_gather_dimension_numbers(self, attr_str):
+        """Parse StableHLO gather dimension numbers attribute."""
+        import re
+        attr_str = str(attr_str)
+
+        # Extract offset_dims
+        offset_dims = ()
+        offset_match = re.search(r'offset_dims\s*=\s*\[([^\]]*)\]', attr_str)
+        if offset_match and offset_match.group(1).strip():
+            offset_dims = tuple(int(x.strip()) for x in offset_match.group(1).split(',') if x.strip())
+
+        # Extract collapsed_slice_dims
+        collapsed_slice_dims = ()
+        collapsed_match = re.search(r'collapsed_slice_dims\s*=\s*\[([^\]]*)\]', attr_str)
+        if collapsed_match and collapsed_match.group(1).strip():
+            collapsed_slice_dims = tuple(int(x.strip()) for x in collapsed_match.group(1).split(',') if x.strip())
+
+        # Extract start_index_map
+        start_index_map = ()
+        start_match = re.search(r'start_index_map\s*=\s*\[([^\]]*)\]', attr_str)
+        if start_match and start_match.group(1).strip():
+            start_index_map = tuple(int(x.strip()) for x in start_match.group(1).split(',') if x.strip())
+
+        return lax.GatherDimensionNumbers(
+            offset_dims=offset_dims,
+            collapsed_slice_dims=collapsed_slice_dims,
+            start_index_map=start_index_map
+        )
+
+    def _parse_slice_sizes(self, attr_str):
+        """Parse slice_sizes attribute from StableHLO gather."""
+        import re
+        attr_str = str(attr_str)
+
+        # Extract numbers after the colon
+        match = re.search(r'array<[^:]+:\s*([^>]+)>', attr_str)
+        if match:
+            numbers_str = match.group(1)
+            return tuple(int(x.strip()) for x in numbers_str.split(',') if x.strip())
+        return ()
+
+    def _parse_scatter_dimension_numbers(self, attr_str):
+        """Parse StableHLO scatter dimension numbers attribute."""
+        import re
+        attr_str = str(attr_str)
+
+        # Extract update_window_dims
+        update_window_dims = ()
+        update_match = re.search(r'update_window_dims\s*=\s*\[([^\]]*)\]', attr_str)
+        if update_match and update_match.group(1).strip():
+            update_window_dims = tuple(int(x.strip()) for x in update_match.group(1).split(',') if x.strip())
+
+        # Extract inserted_window_dims
+        inserted_window_dims = ()
+        inserted_match = re.search(r'inserted_window_dims\s*=\s*\[([^\]]*)\]', attr_str)
+        if inserted_match and inserted_match.group(1).strip():
+            inserted_window_dims = tuple(int(x.strip()) for x in inserted_match.group(1).split(',') if x.strip())
+
+        # Extract scatter_dims_to_operand_dims
+        scatter_dims = ()
+        scatter_match = re.search(r'scatter_dims_to_operand_dims\s*=\s*\[([^\]]*)\]', attr_str)
+        if scatter_match and scatter_match.group(1).strip():
+            scatter_dims = tuple(int(x.strip()) for x in scatter_match.group(1).split(',') if x.strip())
+
+        return lax.ScatterDimensionNumbers(
+            update_window_dims=update_window_dims,
+            inserted_window_dims=inserted_window_dims,
+            scatter_dims_to_operand_dims=scatter_dims
+        )
+
     # Operation mapping dictionaries for cleaner code
     BINARY_OPS = {
         'stablehlo.add': lax.add,
@@ -332,18 +402,43 @@ class StableHLOToJaxpr:
 
         # Gather
         elif op_name_str == 'stablehlo.gather':
-            # This is complex - for now, handle simple cases
             # operands: [operand, start_indices]
-            # For full support, would need to parse gather dimension numbers
-            # For now, skip or use a simple implementation
-            print(f"Warning: gather operation has limited support")
-            result = operands[0]  # Placeholder
+            # Parse dimension numbers and slice sizes
+            dimension_numbers = None
+            slice_sizes = ()
+
+            if 'dimension_numbers' in attrs:
+                dim_nums_str = str(attrs['dimension_numbers'])
+                dimension_numbers = self._parse_gather_dimension_numbers(dim_nums_str)
+
+            if 'slice_sizes' in attrs:
+                slice_sizes = self._parse_slice_sizes(str(attrs['slice_sizes']))
+
+            # Execute gather
+            if dimension_numbers and slice_sizes:
+                result = lax.gather(operands[0], operands[1], dimension_numbers, slice_sizes)
+            else:
+                print(f"Warning: Could not parse gather parameters, skipping")
+                result = operands[0]
 
         # Scatter
         elif op_name_str == 'stablehlo.scatter':
-            # Also complex - skip for now
-            print(f"Warning: scatter operation has limited support")
-            result = operands[0]  # Placeholder
+            # operands: [operand, scatter_indices, updates]
+            # Parse dimension numbers
+            dimension_numbers = None
+
+            if 'scatter_dimension_numbers' in attrs:
+                dim_nums_str = str(attrs['scatter_dimension_numbers'])
+                dimension_numbers = self._parse_scatter_dimension_numbers(dim_nums_str)
+
+            # Execute scatter
+            # Note: StableHLO scatter has a computation region that defines the reduction
+            # For now, we'll use the default (addition) which is most common
+            if dimension_numbers:
+                result = lax.scatter(operands[0], operands[1], operands[2], dimension_numbers)
+            else:
+                print(f"Warning: Could not parse scatter parameters, skipping")
+                result = operands[0]
 
         # Reverse
         elif op_name_str == 'stablehlo.reverse':
