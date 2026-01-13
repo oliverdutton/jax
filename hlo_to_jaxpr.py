@@ -134,6 +134,42 @@ class StableHLOToJaxpr:
                 attrs[str(name)] = value
         return attrs
 
+    # Operation mapping dictionaries for cleaner code
+    BINARY_OPS = {
+        'stablehlo.add': lax.add,
+        'stablehlo.subtract': lax.sub,
+        'stablehlo.multiply': lax.mul,
+        'stablehlo.divide': lax.div,
+        'stablehlo.remainder': lax.rem,
+        'stablehlo.maximum': lax.max,
+        'stablehlo.minimum': lax.min,
+        'stablehlo.and': lax.bitwise_and,
+        'stablehlo.or': lax.bitwise_or,
+        'stablehlo.xor': lax.bitwise_xor,
+        'stablehlo.pow': lax.pow,
+        'stablehlo.power': lax.pow,
+    }
+
+    UNARY_OPS = {
+        'stablehlo.negate': lax.neg,
+        'stablehlo.abs': lax.abs,
+        'stablehlo.not': lax.bitwise_not,
+        'stablehlo.exp': lax.exp,
+        'stablehlo.exponential': lax.exp,
+        'stablehlo.log': lax.log,
+        'stablehlo.tanh': lax.tanh,
+        'stablehlo.sin': lax.sin,
+        'stablehlo.sine': lax.sin,
+        'stablehlo.cos': lax.cos,
+        'stablehlo.cosine': lax.cos,
+        'stablehlo.sqrt': lax.sqrt,
+        'stablehlo.rsqrt': lax.rsqrt,
+        'stablehlo.sign': lax.sign,
+        'stablehlo.floor': lax.floor,
+        'stablehlo.ceil': lax.ceil,
+        'stablehlo.round_nearest_afz': lax.round,
+    }
+
     def _execute_operation(self, op_name: str, op, value_dict: Dict[str, Any]) -> Optional[Any]:
         """
         Execute a StableHLO operation using jax.lax operations.
@@ -164,37 +200,13 @@ class StableHLOToJaxpr:
         # Execute the operation based on its type
         result = None
 
-        # Arithmetic operations
-        if op_name_str == 'stablehlo.add':
-            result = lax.add(operands[0], operands[1])
+        # Check binary operations dictionary
+        if op_name_str in self.BINARY_OPS:
+            result = self.BINARY_OPS[op_name_str](operands[0], operands[1])
 
-        elif op_name_str == 'stablehlo.subtract':
-            result = lax.sub(operands[0], operands[1])
-
-        elif op_name_str == 'stablehlo.multiply':
-            result = lax.mul(operands[0], operands[1])
-
-        elif op_name_str == 'stablehlo.divide':
-            result = lax.div(operands[0], operands[1])
-
-        elif op_name_str == 'stablehlo.remainder':
-            result = lax.rem(operands[0], operands[1])
-
-        elif op_name_str == 'stablehlo.maximum':
-            result = lax.max(operands[0], operands[1])
-
-        elif op_name_str == 'stablehlo.minimum':
-            result = lax.min(operands[0], operands[1])
-
-        # Bitwise/logical operations
-        elif op_name_str == 'stablehlo.and':
-            result = lax.bitwise_and(operands[0], operands[1])
-
-        elif op_name_str == 'stablehlo.or':
-            result = lax.bitwise_or(operands[0], operands[1])
-
-        elif op_name_str == 'stablehlo.xor':
-            result = lax.bitwise_xor(operands[0], operands[1])
+        # Check unary operations dictionary
+        elif op_name_str in self.UNARY_OPS:
+            result = self.UNARY_OPS[op_name_str](operands[0])
 
         # Comparison operations
         elif op_name_str == 'stablehlo.compare':
@@ -213,40 +225,6 @@ class StableHLOToJaxpr:
                 result = lax.ne(operands[0], operands[1])
             else:
                 result = lax.eq(operands[0], operands[1])
-
-        # Unary operations
-        elif op_name_str == 'stablehlo.negate':
-            result = lax.neg(operands[0])
-
-        elif op_name_str == 'stablehlo.abs':
-            result = lax.abs(operands[0])
-
-        elif op_name_str == 'stablehlo.not':
-            result = lax.bitwise_not(operands[0])
-
-        elif op_name_str in ('stablehlo.exp', 'stablehlo.exponential'):
-            result = lax.exp(operands[0])
-
-        elif op_name_str == 'stablehlo.log':
-            result = lax.log(operands[0])
-
-        elif op_name_str == 'stablehlo.tanh':
-            result = lax.tanh(operands[0])
-
-        elif op_name_str in ('stablehlo.sin', 'stablehlo.sine'):
-            result = lax.sin(operands[0])
-
-        elif op_name_str in ('stablehlo.cos', 'stablehlo.cosine'):
-            result = lax.cos(operands[0])
-
-        elif op_name_str == 'stablehlo.sqrt':
-            result = lax.sqrt(operands[0])
-
-        elif op_name_str == 'stablehlo.rsqrt':
-            result = lax.rsqrt(operands[0])
-
-        elif op_name_str in ('stablehlo.pow', 'stablehlo.power'):
-            result = lax.pow(operands[0], operands[1])
 
         # Type conversion
         elif op_name_str == 'stablehlo.convert':
