@@ -222,6 +222,11 @@ def _tuples_differ(xs, ys):
   differences = jax.tree.leaves(jax.tree.map(lambda x, y: x != y, xs, ys))
   return functools.reduce(lambda x, y: x | y, differences, False)
 
+def _tuple_contains_value(xs, value):
+  """Check if any element in the tuple equals the given value."""
+  checks = jax.tree.leaves(jax.tree.map(lambda x: x == value, xs))
+  return functools.reduce(lambda x, y: x | y, checks, False)
+
 def _tuple_all_binop(binop, xs, ys):
   """Dynamic reduce_all calculation with a user-provided comparison op."""
   differences = jax.tree.leaves(jax.tree.map(lambda x, y: binop(x, y), xs, ys))
@@ -1138,7 +1143,9 @@ def fetch_with_lookahead(buffered_ref, src_ref,
     block_indices = buffered_ref.compute_index(*cur_indices_offset)
     next_block_indices = buffered_ref.compute_index(*next_indices_offset)
     will_change = _tuples_differ(block_indices, next_block_indices)
-    pred = will_change
+    # Skip DMA if offset is -1
+    offset_not_minus_one = ~_tuple_contains_value(next_indices, -1)
+    pred = will_change & offset_not_minus_one
     bref = buffered_ref.with_slot_index(copy_in_slot=cumulative_copy_in)
     @pl.when(pred)
     def _start():
@@ -1486,6 +1493,9 @@ class Scheduler:
     if buffered_ref.use_lookahead:
       buffered_ref = buffered_ref.with_next_fetch(
           jax.tree.map(jnp.zeros_like, buffered_ref.next_fetch_sreg))
+      # Skip DMA if offset is -1
+      offset_not_minus_one = ~_tuple_contains_value(buffered_ref.next_fetch_sreg, -1)
+      pred = pred & offset_not_minus_one
       @pl.when(pred)
       def _start():
         buffered_ref.copy_in(
@@ -1517,6 +1527,10 @@ class Scheduler:
           should_prefetch = True
         else:
           should_prefetch = _tuples_differ(block_indices, next_block_indices)
+
+        # Skip DMA if offset is -1
+        offset_not_minus_one = ~_tuple_contains_value(next_grid_indices, -1)
+        should_prefetch = should_prefetch & offset_not_minus_one
 
         @pl.when(pred & should_prefetch)
         def _():
